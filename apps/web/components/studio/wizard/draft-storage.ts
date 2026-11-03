@@ -9,6 +9,10 @@ type StudioDraft = {
   cast?: CastChannel[];
   topic?: string;
   style?: string;
+  language?: string;
+  targetDurationSec?: number;
+  autoEmotionTags?: boolean;
+  sourceLinks?: string;
   aspect?: Aspect;
   resolution?: "720p" | "1080p";
 };

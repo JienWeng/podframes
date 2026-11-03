@@ -7,6 +7,4 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   target: "node22",
-  // These are heavy / native-ish; let the consumer resolve them at runtime.
-  external: ["@google/genai", "@speech-sdk/core"],
 });

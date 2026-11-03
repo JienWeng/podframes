@@ -5,7 +5,7 @@ import { CAPTION_STYLES, CAPTION_COLORS } from "@/lib/site";
 import { VISUAL_TREATMENTS } from "@podframes/core/shared";
 import { useDraft } from "@/components/studio/useDraft";
 import { useTransport } from "@/components/studio/transport";
-import { getProject, regenCueImage, mediaUrl, type Cue } from "@/components/studio/api";
+import { getProject, regenCueImage, uploadCuePhoto, mediaUrl, type Cue } from "@/components/studio/api";
 import { useWizard } from "./context";
 import { StepHeader, StepFooter, inputClass } from "./ui";
 
@@ -30,6 +30,7 @@ export function Step3Look() {
   const [custom, setCustom] = useDraft(color, color);
   const [cues, setCues] = useDraft<Cue[]>(project?.cues ?? [], JSON.stringify(project?.cues ?? []));
   const [regenId, setRegenId] = useState<string | null>(null);
+  const [imageError, setImageError] = useState("");
 
   const setOption = (patch: Record<string, unknown>) => ctx.patch({ options: patch as never });
   const saveCues = async (next: Cue[]) => {
@@ -52,7 +53,7 @@ export function Step3Look() {
     // timings, titles, and prompts below. Ask before discarding edits.
     if (cues.length > 0 && !(await ctx.confirm({
       title: "Replace b-roll cues?",
-      body: "A fresh suggestion replaces the current cue list, including hand-tuned timings, titles, and prompts.",
+      body: "A fresh suggestion replaces the current cue list, including uploaded photos, hand-tuned timings, titles, and prompts.",
       details: [`Will replace ${cues.length} cue${cues.length === 1 ? "" : "s"}.`, "You can edit the new suggestions afterward."],
       confirmLabel: "Replace cues",
       tone: "warn",
@@ -82,9 +83,21 @@ export function Step3Look() {
     }
   }
 
+  async function upload(cue: Cue, file: File) {
+    if (!ctx.slug) return;
+    setRegenId(cue.id);
+    setImageError("");
+    try {
+      if (!(await ctx.patch({ cues }))) return;
+      await uploadCuePhoto(ctx.slug, cue.id, file);
+      await ctx.refresh();
+    } catch (error) { setImageError(error instanceof Error ? error.message : String(error)); }
+    finally { setRegenId(null); }
+  }
+
   return (
     <div>
-      <StepHeader title="Dress it up" hint="Captions ride the word-level timing automatically — pick a look. B-roll is optional." />
+      <StepHeader title="B-roll & captions" hint="Captions ride the word-level timing automatically — pick a look. B-roll is optional." />
 
       {/* Visual treatment — the original composition remains the default. Richer
           modes reuse every paid host clip and only invalidate compose/render. */}
@@ -155,6 +168,8 @@ export function Step3Look() {
       <button onClick={suggest} disabled={disabled} className="btn btn-ghost w-full py-2 text-sm disabled:opacity-50">
         {running ? "Thinking…" : cues.length ? `↻ Re-suggest ${treatment} beats` : `Suggest ${treatment} beats`}
       </button>
+      <p className="mt-2 text-xs text-[var(--color-text-muted)]">Use your own photography or screenshots for a documentary edit. Upload a photo on any image cue; its timing and camera motion stay in place.</p>
+      {imageError && <p role="alert" className="mt-2 text-xs text-[var(--color-danger)]">{imageError}</p>}
 
       <div className="mt-3 space-y-2">
         {cues.map((cue, i) => {
@@ -228,9 +243,19 @@ export function Step3Look() {
                   <input value={cue.subtitle ?? ""} disabled={disabled} onChange={patchField("subtitle")} onBlur={() => saveCues(cues)} placeholder="subtitle (optional)" className={inputClass} />
                 )}
                 {cue.type === "broll" && (
+                  <label className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]">
+                    <span>{regenId === cue.id ? "Updating…" : cue.imagePath?.startsWith("broll/upload-") ? "Replace photo" : "Upload photo"}</span>
+                    <input type="file" accept="image/png,image/jpeg,image/webp" disabled={disabled || regenId !== null} className="min-w-0 flex-1 text-xs" onChange={(event) => {
+                      const file = event.currentTarget.files?.[0];
+                      event.currentTarget.value = "";
+                      if (file) void upload(cue, file);
+                    }} />
+                  </label>
+                )}
+                {cue.type === "broll" && (
                   <div className="flex gap-2">
                     <textarea value={cue.imagePrompt ?? ""} disabled={disabled} onChange={(e) => setCues((c) => c.map((x, j) => (j === i ? { ...x, imagePrompt: e.target.value } : x)))} rows={2} placeholder="image prompt" className={`${inputClass} resize-none`} />
-                    <button onClick={() => regen(cue)} disabled={disabled || !cue.imagePrompt || regenId === cue.id} className="btn btn-ghost shrink-0 px-3 text-xs disabled:opacity-50" title="Regenerate image" aria-label="Regenerate image">{regenId === cue.id ? "…" : "↻"}</button>
+                    <button onClick={() => regen(cue)} disabled={disabled || !cue.imagePrompt || regenId !== null} className="btn btn-ghost shrink-0 px-3 text-xs disabled:opacity-50" title="Generate an AI illustration to replace this image">{regenId === cue.id ? "…" : "Generate AI"}</button>
                   </div>
                 )}
               </div>
@@ -240,7 +265,7 @@ export function Step3Look() {
       </div>
 
       <StepFooter>
-        <button onClick={() => ctx.go(5)} disabled={disabled} className="btn btn-primary px-5 py-2 text-sm disabled:opacity-50">Next: Output →</button>
+        <button onClick={() => ctx.go(5)} disabled={disabled} className="btn btn-primary px-5 py-2 text-sm disabled:opacity-50">Continue to Export →</button>
       </StepFooter>
     </div>
   );

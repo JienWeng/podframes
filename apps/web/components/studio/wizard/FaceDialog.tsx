@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ROSTER, rosterThumb } from "@/lib/roster";
-import { uploadHostPhoto } from "@/components/studio/api";
+import { uploadHostPhoto, generateHostPhoto } from "@/components/studio/api";
 import { useWizard } from "./context";
 import { doneStageLabels } from "./Step1Cast";
 import { castToHosts } from "./cast";
@@ -15,7 +15,8 @@ export function FaceDialog({ index, ch, onClose }: { index: number; ch: CastChan
   const [selected, setSelected] = useState<string | null>(ch.rosterKey ?? null);
   const [file, setFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string>("");
-  const [busy, setBusy] = useState<"choose" | "upload" | null>(null);
+  const [busy, setBusy] = useState<"choose" | "upload" | "generate" | null>(null);
+  const [appearance, setAppearance] = useState(ch.appearance);
   const [error, setError] = useState<string | null>(null);
   const avatarStages = doneStageLabels(ctx.project, ["stills", "video", "compose", "render"]);
 
@@ -81,9 +82,27 @@ export function FaceDialog({ index, ch, onClose }: { index: number; ch: CastChan
 
   const working = busy !== null;
 
+  async function generatePortrait() {
+    setBusy("generate");
+    setError(null);
+    try {
+      if (!(await confirmAvatarChange())) return;
+      const slug = await ctx.ensureProject();
+      if (!slug) throw new Error("couldn't create the project");
+      await generateHostPhoto(slug, ch.id, appearance);
+      ctx.setCast((cs) => cs.map((c, i) => i === index ? { ...c, appearance, rosterKey: undefined } : c));
+      await ctx.refresh();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4" onClick={() => !working && onClose()}>
-      <div className="w-full max-w-md border border-[var(--color-hairline)] bg-[var(--color-surface)]" onClick={(e) => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-label="Choose host portrait" className="dialog-surface w-full max-w-md border border-[var(--color-hairline)] bg-[var(--color-surface)]" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-[var(--color-hairline)] px-4 py-3">
           <span className="mono text-[11px] tracking-[0.09em] text-[var(--color-text-muted)]">CH {String.fromCharCode(65 + index)} · FACE</span>
           <button onClick={onClose} disabled={working} className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] disabled:opacity-40" aria-label="Close">✕</button>
@@ -132,6 +151,13 @@ export function FaceDialog({ index, ch, onClose }: { index: number; ch: CastChan
                 <input type="file" accept="image/*" disabled={working} className="hidden" onChange={(e) => e.target.files?.[0] && pickFile(e.target.files[0])} />
               </label>
             )}
+          </section>
+
+          <section className="border-t border-[var(--color-hairline)] pt-4">
+            <label htmlFor="avatar-appearance" className="mono mb-2 block text-[10px] tracking-[0.08em] text-[var(--color-text-muted)]">GENERATE WITH CODEX</label>
+            <textarea id="avatar-appearance" value={appearance} onChange={(e) => setAppearance(e.target.value)} disabled={working} maxLength={2000} rows={3} className="w-full border border-[var(--color-hairline)] bg-[var(--color-surface-2)] p-2 text-sm" />
+            <button onClick={generatePortrait} disabled={working || !appearance.trim()} className="btn btn-primary mt-2 w-full py-2 text-sm disabled:opacity-40">{busy === "generate" ? "Generating…" : "Generate portrait"}</button>
+            <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">Uses your local Codex ChatGPT subscription limits.</p>
           </section>
 
           {error && <p className="text-[12px] text-[var(--color-danger)]">{error}</p>}

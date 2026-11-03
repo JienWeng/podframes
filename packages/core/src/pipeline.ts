@@ -1,9 +1,15 @@
-import { GeminiClient } from "./clients/gemini";
+import { whisperStatus } from "./clients/whisper";
+import { assertHeygenAuth } from "./clients/heygen";
+import { fishStatus, validateFishSpeech } from "./clients/fish";
+import { codexStatus } from "./clients/codex";
+import { WritingClient, assertWritingReady } from "./clients/writing";
 import { resolveEnv } from "./config";
 import { clearStages } from "./editing";
 import { optionInvalidations } from "./shared";
 import { Project } from "./project";
 import { validateConfig } from "./validate";
+import { validateManualScript } from "./script-import";
+import { applyShowTemplate } from "./show-template";
 import { Reporter } from "./util/events";
 import { ensureBinary } from "./util/proc";
 import { slugForTopic, slugify } from "./util/fs";
@@ -16,10 +22,10 @@ import { runBroll } from "./stages/broll";
 import { runCompose } from "./stages/compose";
 import { runRender } from "./stages/render";
 import type { StageContext } from "./stages/context";
-import type { ConversationConfig, ProgressHandler, StageName } from "./types";
+import type { ConversationConfig, ProgressHandler, StageName, Script } from "./types";
 import type { ResolvedEnv } from "./config";
 
-type Needs = "gemini" | "speech" | "none";
+type Needs = "codex" | "speech" | "none";
 
 interface StageDef {
   name: StageName;
@@ -28,11 +34,11 @@ interface StageDef {
 }
 
 export const STAGES: StageDef[] = [
-  { name: "script", run: runScript, needs: "gemini" },
+  { name: "script", run: runScript, needs: "codex" },
   { name: "speech", run: runSpeech, needs: "speech" },
-  { name: "stills", run: runStills, needs: "gemini" },
-  { name: "video", run: runVideo, needs: "gemini" },
-  { name: "broll", run: runBroll, needs: "gemini" },
+  { name: "stills", run: runStills, needs: "codex" },
+  { name: "video", run: runVideo, needs: "codex" },
+  { name: "broll", run: runBroll, needs: "codex" },
   { name: "compose", run: runCompose, needs: "none" },
   { name: "render", run: runRender, needs: "none" },
 ];
@@ -40,6 +46,10 @@ export const STAGES: StageDef[] = [
 export const STAGE_NAMES = STAGES.map((s) => s.name);
 
 export interface GenerateOptions {
+  /** Imported dialogue: bypass drafting and run the remaining stages. */
+  script?: Script;
+  /** Seed a new episode with an existing project's portraits and image library. */
+  template?: string;
   /** Repo root — where `projects/` lives and `.env.local` is read from. */
   root?: string;
   /** Override the auto-derived project slug. */
@@ -80,15 +90,6 @@ function selectStages(opts: GenerateOptions): StageDef[] {
   return STAGES.slice(fromIdx, toIdx + 1);
 }
 
-/** A Gemini client that throws a helpful error only if a stage actually uses it. */
-function lazyGemini(): GeminiClient {
-  return new Proxy({} as GeminiClient, {
-    get() {
-      throw new Error("GEMINI_API_KEY is required for this stage (set it in .env.local)");
-    },
-  });
-}
-
 /**
  * Run the podframes pipeline for a config: create-or-resume the project, then
  * run the selected stages. Resumable: each stage skips itself if its artifact
@@ -99,6 +100,7 @@ export async function generate(
   opts: GenerateOptions = {},
 ): Promise<Project> {
   validateConfig(config);
+  if (opts.script) validateManualScript(opts.script, config.hosts);
   const root = opts.root ?? process.cwd();
   // Lock key MUST match the slug Project.open derives, so the pipeline and the
   // quick-edit routes coordinate on the exact same project. The on-disk lock
@@ -113,7 +115,15 @@ export async function generate(
       // run persists the option, skips compose/render as "done", and silently
       // returns the old video. Compare BEFORE open() merges the overrides in.
       const prior = await Project.load(root, lockSlug).catch(() => null);
+      if (opts.template && (!/^[a-z0-9][a-z0-9-]*$/i.test(opts.template) || opts.template === lockSlug)) throw new Error("Use an existing template slug and a different new episode slug.");
+      if (opts.template && prior && prior.state.templateSource !== opts.template) throw new Error("This episode was not created from that template. Choose a new episode slug.");
+      const template = opts.template && !prior ? await Project.load(root, opts.template) : null;
+      if (opts.template && !prior && !template) throw new Error(`Template project not found: ${opts.template}`);
       const project = await Project.open(config, root, opts.slug);
+      if (template) {
+        try { await applyShowTemplate(project, template); }
+        catch (error) { await Project.delete(root, project.slug); throw error; }
+      }
       if (prior && config.options) {
         const stale = optionInvalidations(prior.state.options, config.options);
         if (stale.length) {
@@ -122,7 +132,7 @@ export async function generate(
         }
       }
       return runPipeline(project, opts, root);
-    });
+    }, root);
   } finally {
     endRun(lockSlug);
   }
@@ -136,7 +146,7 @@ export async function generate(
 export async function generateProject(project: Project, opts: GenerateOptions = {}): Promise<Project> {
   beginRun(project.slug, runLockFile(project.root, project.slug));
   try {
-    return await withProjectLock(project.slug, () => runPipeline(project, opts, opts.root ?? project.root));
+    return await withProjectLock(project.slug, () => runPipeline(project, opts, opts.root ?? project.root), project.root);
   } finally {
     endRun(project.slug);
   }
@@ -148,7 +158,20 @@ async function runPipeline(project: Project, opts: GenerateOptions, root: string
   const pipe = reporter.stage("pipeline");
 
   const env = resolveEnv(root);
-  const selected = selectStages(opts);
+  const selected = selectStages(opts).filter((stage) => !opts.script || stage.name !== "script");
+  if (opts.script) {
+    validateManualScript(opts.script, project.state.config.hosts);
+    const previous = project.state.script;
+    const content = (script: Script) => script.turns.map((turn) => [turn.hostId, turn.text, turn.performance]);
+    if (!previous || JSON.stringify(content(previous)) !== JSON.stringify(content(opts.script))) {
+      await clearStages(project, ["speech", "video", "broll", "compose", "render"]);
+    } else if (previous.title !== opts.script.title || previous.hook !== opts.script.hook) {
+      await clearStages(project, ["compose", "render"]);
+    }
+    project.state.script = structuredClone(opts.script);
+    project.markDone("script");
+    await project.save();
+  }
 
   // Which selected stages will actually execute (done + artifact-present skip).
   const willRun = selected.filter(
@@ -172,8 +195,24 @@ async function runPipeline(project: Project, opts: GenerateOptions, root: string
     );
   }
 
-  const gemini = env.geminiApiKey ? new GeminiClient({ apiKey: env.geminiApiKey }) : lazyGemini();
-  const ctx: StageContext = { project, gemini, env, reporter, signal: opts.signal, onlyTurns: opts.onlyTurns };
+  if (willRun.some((s) => s.name === "speech")) {
+    if (!(await fishStatus())) throw new Error("Fish website login required: run `codex mcp add fish-audio --url https://api.fish.audio/mcp` then `codex mcp login fish-audio`.");
+    if (!(await whisperStatus())) throw new Error("Local Whisper is required for captions: install whisper.cpp and its model (see README).");
+    for (const host of project.state.config.hosts) {
+      validateFishSpeech({ ...host, text: "preflight" });
+    }
+  }
+
+  if (willRun.some((s) => s.name === "script")) await assertWritingReady(project.state.options.scriptModel);
+  if (willRun.some((s) => s.name === "broll")) await assertWritingReady(project.state.options.cueModel);
+  if (willRun.some((s) => ["speech", "stills", "broll"].includes(s.name)) && !(await codexStatus())) {
+    throw new Error("Codex ChatGPT login required: install Codex CLI, then run `codex login`.");
+  }
+  if (willRun.some((s) => s.name === "video") && project.state.options.videoProvider === "heygen") {
+    await assertHeygenAuth(project.state.options.heygenAuth ?? "subscription", env.heygenApiKey);
+  }
+  const codex = new WritingClient({ signal: opts.signal });
+  const ctx: StageContext = { project, codex, env, reporter, signal: opts.signal, onlyTurns: opts.onlyTurns };
 
   pipe.info(
     `project "${project.slug}" · stages: ${selected.map((s) => s.name).join(" → ")}`,
@@ -231,12 +270,8 @@ export function missingKeys(
 ): MissingKey[] {
   const { options } = project.state;
   const out: MissingKey[] = [];
-  const needsGemini = stages.some((n) => n === "script" || n === "stills" || n === "broll");
-  if (needsGemini && !env.geminiApiKey) {
-    out.push({ envVar: "GEMINI_API_KEY", reason: "script, stills, and b-roll (Gemini)" });
-  }
-  if (stages.includes("speech") && !env.speechbaseApiKey) {
-    out.push({ envVar: "SPEECHBASE_API_KEY", reason: "the mixed conversation audio (Speechbase)" });
+  if (stages.includes("video") && options.videoProvider === "heygen" && options.heygenAuth === "api" && !env.heygenApiKey) {
+    out.push({ envVar: "HEYGEN_API_KEY", reason: "HeyGen API billing mode" });
   }
   if (stages.includes("video") && options.videoProvider === "fal-ltx" && !env.falApiKey) {
     out.push({ envVar: "FAL_API_KEY", reason: "the fal-ltx lip-sync video provider" });

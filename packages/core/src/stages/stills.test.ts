@@ -7,7 +7,7 @@ import { Project } from "../project";
 import { Reporter } from "../util/events";
 import { runStills } from "./stills";
 import type { ConversationConfig, Host } from "../types";
-import type { GeminiClient } from "../clients/gemini";
+import type { CodexClient } from "../clients/codex";
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -23,7 +23,7 @@ function host(id: string, name: string, side: "left" | "right"): Host {
     id,
     name,
     speaker: id === "host_a" ? "HOST_A" : "HOST_B",
-    model: "google/gemini-3.1-flash-tts-preview",
+    model: "google/codex-3.1-flash-tts-preview",
     voice: id === "host_a" ? "Aoede" : "Puck",
     side,
     appearance: `${name} test host`,
@@ -47,13 +47,13 @@ test("runStills uses uploaded/base avatars directly without generating variants"
   await writeFile(project.path("stills", "host_a-base.png"), "png");
   await writeFile(project.path("stills", "host_b-base.png"), "png");
 
-  const gemini = {
+  const codex = {
     generateImageToFile: async () => {
-      throw new Error("Gemini should not be called for uploaded/base avatars");
+      throw new Error("Codex should not be called for uploaded/base avatars");
     },
-  } as unknown as GeminiClient;
+  } as unknown as CodexClient;
 
-  await runStills({ project, gemini, env: {}, reporter: new Reporter({ console: false }) });
+  await runStills({ project, codex, env: {}, reporter: new Reporter({ console: false }) });
 
   assert.deepEqual(project.state.stills?.hosts.host_a, {
     imagePath: "stills/host_a-base.png",
@@ -76,14 +76,14 @@ test("runStills fails loudly when a referenced avatar image is missing", async (
   const project = await Project.create(config, root, "missing-avatar");
   project.state.uploads = { host_a: "stills/host_a-base.png" }; // file never created
 
-  const gemini = {
+  const codex = {
     generateImageToFile: async () => {
-      throw new Error("Gemini should not be called for uploaded/base avatars");
+      throw new Error("Codex should not be called for uploaded/base avatars");
     },
-  } as unknown as GeminiClient;
+  } as unknown as CodexClient;
 
   await assert.rejects(
-    () => runStills({ project, gemini, env: {}, reporter: new Reporter({ console: false }) }),
+    () => runStills({ project, codex, env: {}, reporter: new Reporter({ console: false }) }),
     /avatar image missing for Ada.*re-pick the face/,
   );
 });

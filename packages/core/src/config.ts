@@ -3,21 +3,16 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Host, PipelineOptions } from "./types";
 
-/**
- * Current model ids (July 2026). Centralized so a model bump is a one-line edit.
- * See README → "Models" for the verification notes behind each id.
- */
+/** Local Codex labels and installed animation model IDs. */
 export const MODELS = {
   /** High-quality two-host script writing. */
-  scriptModel: "gemini-3.1-pro-preview",
-  /** B-roll / caption cue analysis. Uses the Pro model (same as the script): it's a single
-   *  editorial-judgment call per episode (which lines earn a graphic + the image prompts), so
-   *  the better reasoning is worth far more than the marginal cost vs the old 3.5-flash. */
-  cueModel: "gemini-3.1-pro-preview",
-  /** Nano Banana 2 — host stills (face quality + identity consistency matter here). */
-  imageModel: "gemini-3.1-flash-image",
-  /** Nano Banana 2 Lite — b-roll images (~4s per image, ~$0.034 per 1K image). */
-  brollImageModel: "gemini-3.1-flash-lite-image",
+  scriptModel: "codex-local",
+  /** Structured editorial cue planning in local Codex. */
+  cueModel: "codex-local",
+  /** Built-in subscription image generation for host stills. */
+  imageModel: "codex-image",
+  /** Built-in subscription image generation for b-roll. */
+  brollImageModel: "codex-image",
   /** fal LTX-2.3 — audio-to-video, per-turn lip-synced animation. */
   falVideoModel: "fal-ai/ltx-2.3-quality/audio-to-video",
   /** Replicate / Pruna AI p-video-avatar — default cheaper, faster per-turn audio-to-video. */
@@ -26,6 +21,7 @@ export const MODELS = {
 
 export const DEFAULT_OPTIONS: PipelineOptions = {
   videoProvider: "replicate-p-video",
+  heygenAuth: "subscription",
   scriptModel: MODELS.scriptModel,
   cueModel: MODELS.cueModel,
   imageModel: MODELS.imageModel,
@@ -49,8 +45,8 @@ export const DEFAULT_HOSTS: [Host, Host] = [
     id: "host_a",
     name: "Ada",
     speaker: "HOST_A",
-    model: "google/gemini-3.1-flash-tts-preview",
-    voice: "Aoede",
+    model: "fish/s2.1-pro",
+    voice: "ca3007f96ae7499ab87d27ea3599956a",
     side: "left",
     persona: "warm, curious lead host who keeps things moving and asks the sharp follow-up",
     appearance:
@@ -60,8 +56,8 @@ export const DEFAULT_HOSTS: [Host, Host] = [
     id: "host_b",
     name: "Theo",
     speaker: "HOST_B",
-    model: "elevenlabs/eleven_v3",
-    voice: "7QN34D2r3hCNwbOYIeK0",
+    model: "fish/s2.1-pro",
+    voice: "9a9cf47702da476aa4629e2506d4a857",
     side: "right",
     persona: "lively, energetic American co-host who riffs, reacts, and grounds the excitement in specifics",
     appearance:
@@ -70,9 +66,7 @@ export const DEFAULT_HOSTS: [Host, Host] = [
 ];
 
 export interface ResolvedEnv {
-  /** Speechbase gateway key — ALL TTS routes through Speechbase (BYOK lives there). */
-  speechbaseApiKey?: string;
-  geminiApiKey?: string;
+  heygenApiKey?: string;
   /** fal.ai key (used for LTX audio-to-video). */
   falApiKey?: string;
   /** Replicate key (used for the default p-video-avatar audio-to-video path). */
@@ -97,8 +91,7 @@ export function ensureEnvLoaded(cwd = process.cwd()): void {
 export function resolveEnv(cwd = process.cwd()): ResolvedEnv {
   ensureEnvLoaded(cwd);
   return {
-    speechbaseApiKey: process.env.SPEECHBASE_API_KEY || process.env.SPEECH_GATEWAY_API_KEY,
-    geminiApiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
+    heygenApiKey: process.env.HEYGEN_API_KEY,
     falApiKey: process.env.FAL_API_KEY || process.env.FAL_KEY,
     replicateApiKey: process.env.REPLICATE_API_KEY || process.env.REPLICATE_API_TOKEN,
   };

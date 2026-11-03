@@ -7,9 +7,11 @@ import {
   mergeOptions,
   optionInvalidations,
   validateOptions,
+  validateConfig,
   STAGE_NAMES,
   withProjectLock,
 } from "@podframes/core";
+import { validateManualScript } from "@podframes/core/script-import";
 import type {
   ConversationConfig,
   Host,
@@ -42,6 +44,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ slug
     return new Response("A generation run is in progress — stop it first, then delete.", { status: 409 });
   }
   return withProjectLock(safe, async () => {
+    if (isRunActiveAnywhere(safe)) return new Response("A generation run is queued or active. Wait for it to finish.", { status: 409 });
     if (isRunActiveAnywhere(safe)) {
       return new Response("A generation run is in progress — stop it first, then delete.", { status: 409 });
     }
@@ -56,7 +59,7 @@ interface PatchBody {
   config?: Partial<
     Pick<
       ConversationConfig,
-      "topic" | "styleNote" | "targetTurns" | "maxWordsPerTurn" | "language" | "aspectRatio"
+      "topic" | "styleNote" | "targetTurns" | "maxWordsPerTurn" | "language" | "aspectRatio" | "targetDurationSec" | "autoEmotionTags" | "sourceUrls"
     >
   >;
   /** Full host array replacement (name/voice/model/side/persona/appearance). */
@@ -105,10 +108,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
 
   // Serialize all writers to this project so open→mutate→save can't interleave.
   return withProjectLock(safe, async () => {
+    if (isRunActiveAnywhere(safe)) return new Response("A generation run is queued or active. Wait for it to finish.", { status: 409 });
     // Project.load never touches config/options — the persisted state is the truth.
     const project = await Project.load(root, safe);
     if (!project) return new Response("not found", { status: 404 });
     const s = project.state;
+    if (body.script) {
+      try { validateManualScript(body.script, body.hosts ?? s.config.hosts); }
+      catch (error) { return new Response((error as Error).message, { status: 400 }); }
+    }
 
     const toClear = new Set<StageName>();
     const add = (stages: readonly StageName[]) => stages.forEach((x) => toClear.add(x));
@@ -122,12 +130,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
     if (body.config) {
       const c = s.config;
       const n = body.config;
+      try {
+        validateConfig({ ...c, ...n });
+      } catch (error) {
+        return new Response(error instanceof Error ? error.message : String(error), { status: 400 });
+      }
       if (n.aspectRatio !== undefined && n.aspectRatio !== c.aspectRatio) add(INVALIDATION.aspectRatio);
       if (
         (n.topic !== undefined && n.topic !== c.topic) ||
         (n.styleNote !== undefined && n.styleNote !== c.styleNote) ||
         (n.targetTurns !== undefined && n.targetTurns !== c.targetTurns) ||
         (n.maxWordsPerTurn !== undefined && n.maxWordsPerTurn !== c.maxWordsPerTurn) ||
+        (n.targetDurationSec !== undefined && n.targetDurationSec !== c.targetDurationSec) ||
+        (n.autoEmotionTags !== undefined && n.autoEmotionTags !== c.autoEmotionTags) ||
+        (n.sourceUrls !== undefined && JSON.stringify(n.sourceUrls) !== JSON.stringify(c.sourceUrls ?? [])) ||
         (n.language !== undefined && n.language !== c.language)
       ) {
         add(INVALIDATION.topic);

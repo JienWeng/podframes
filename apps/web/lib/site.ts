@@ -2,8 +2,8 @@ export const SITE = {
   name: "podframes",
   tagline: "Turn a topic into a podcast you can watch.",
   github: "https://github.com/Jellypod-Inc/podframes",
-  speechbase: "https://speechbase.ai",
-  speechbaseDocs: "https://www.speechbase.ai/docs/platform",
+  fish: "https://fish.audio",
+  fishDocs: "https://docs.fish.audio",
   hyperframes: "https://hyperframes.heygen.com",
 } as const;
 
@@ -24,33 +24,33 @@ export const PIPELINE: PipelineStep[] = [
   {
     n: "01",
     title: "Write the script",
-    tech: "Gemini 3.1 Pro",
+    tech: "Local Codex",
     blurb: "A topic becomes a tight two-host dialogue — alternating turns, real facts, a clean button.",
   },
   {
     n: "02",
     title: "Mix the voices",
-    tech: "Speechbase",
+    tech: "Fish Audio",
     blurb:
-      "Each host can be a different TTS provider. One call returns a leveled conversation plus word-level timestamps.",
+      "Each host has a Fish Audio voice. Website credits generate speech; local Whisper measures word timestamps.",
   },
   {
     n: "03",
     title: "Cast the hosts",
-    tech: "Nano Banana 2",
+    tech: "Codex images",
     blurb: "Use one base avatar image per host, from the roster, an upload, or a neutral generated portrait.",
   },
   {
     n: "04",
     title: "Animate them",
-    tech: "LTX-2.3 (fal)",
+    tech: "P-Video / LTX / HeyGen",
     blurb:
-      "Each line becomes its own clip, lip-synced to that turn's real audio. Swap in Replicate P-Video Avatar for a ~4× cheaper take.",
+      "Each line becomes its own clip, lip-synced to that turn's real audio. Choose P-Video, LTX, or HeyGen.",
   },
   {
     n: "05",
     title: "Package it",
-    tech: "Gemini + Nano Banana 2",
+    tech: "Codex + image generation",
     blurb:
       "The timestamped transcript drives karaoke captions, b-roll, lower-thirds, and stat cards — on the beat.",
   },

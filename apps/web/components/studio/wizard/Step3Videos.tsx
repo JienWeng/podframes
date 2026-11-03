@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { estimateVideoCost, VIDEO_PROVIDERS } from "@podframes/core/shared";
+import { estimateVideoCost, VIDEO_PROVIDERS, type VideoProviderId } from "@podframes/core/shared";
 import { providerColor, providerOfModel } from "@/lib/providers";
 import { useDraft } from "@/components/studio/useDraft";
 import { mediaUrl, regenerateClips, type ClipAsset, type Host, type TurnRegion } from "@/components/studio/api";
@@ -56,7 +56,7 @@ export function Step3Videos() {
     setSelected((s) => (s.includes(i) ? s.filter((x) => x !== i) : [...s, i]));
   }
 
-  async function setProvider(p: "fal-ltx" | "replicate-p-video") {
+  async function setProvider(p: VideoProviderId) {
     if (p === provider) return;
     // Every existing clip was made by the old provider — switching deletes them
     // all. Count only clips that map to CURRENT turns (what the grid shows), not
@@ -126,7 +126,7 @@ export function Step3Videos() {
   return (
     <div>
       <StepHeader
-        title="Generate videos"
+        title="Videos"
         hint="Animate each line into a lip-synced clip. Pick a provider, then generate — check specific lines to redo just those later."
       />
 
@@ -148,6 +148,21 @@ export function Step3Videos() {
           </button>
         ))}
       </div>
+
+      {provider === "heygen" && (
+        <label className="mb-5 block text-xs text-[var(--color-text-secondary)]">
+          HeyGen billing
+          <select
+            value={project?.options.heygenAuth ?? "subscription"}
+            disabled={disabled}
+            onChange={(e) => void ctx.patch({ options: { heygenAuth: e.target.value as "subscription" | "api" } })}
+            className="ml-3 border border-[var(--color-hairline)] bg-[var(--color-surface)] p-2"
+          >
+            <option value="subscription">Subscription (CLI OAuth login)</option>
+            <option value="api">API credits (HEYGEN_API_KEY)</option>
+          </select>
+        </label>
+      )}
 
       <div className="mono mb-2 flex items-center justify-between text-[10px] tracking-[0.08em] text-[var(--color-text-muted)]">
         <span>CLIPS · {selected.length}/{turns.length} selected</span>
@@ -190,7 +205,7 @@ export function Step3Videos() {
 
       <StepFooter>
         <div className="flex flex-col gap-1">
-          <button onClick={generateSelected} disabled={disabled || selected.length === 0} className="btn btn-primary px-5 py-2 text-sm disabled:opacity-50">
+          <button onClick={generateSelected} disabled={disabled || selected.length === 0} className={`btn ${videoDone ? "btn-ghost" : "btn-primary"} px-5 py-2 text-sm disabled:opacity-50`}>
             {running ? "Generating…" : videoDone ? `Regenerate selected (${selected.length})` : `Generate videos (${selected.length})`}
           </button>
           {estLabel && !running && (
@@ -203,7 +218,7 @@ export function Step3Videos() {
           )}
         </div>
         {videoDone && (
-          <button onClick={() => ctx.go(4)} disabled={disabled} className="btn btn-ghost px-5 py-2 text-sm disabled:opacity-50">Next: B-roll →</button>
+          <button onClick={() => ctx.go(4)} disabled={disabled} className="btn btn-primary px-5 py-2 text-sm disabled:opacity-50">Continue to B-roll & captions →</button>
         )}
       </StepFooter>
     </div>

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { DM_Sans, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-// Speechbase's typographic identity — DM Sans for display/body, Geist Mono for machine values.
+// Shared studio typography and timecode numerals.
 const sans = DM_Sans({
   subsets: ["latin"],
   variable: "--font-dm-sans",
@@ -20,9 +20,9 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: "podframes — animated AI podcast videos, powered by Speechbase",
+  title: "podframes — animated AI podcast videos, with Codex and Fish Audio",
   description:
-    "Turn a topic into a fully animated, AI-hosted podcast video. Mix any TTS providers into one conversation with Speechbase, lip-sync each host to the real audio, and render with HyperFrames.",
+    "Turn a topic into a fully animated, AI-hosted podcast video. Generate two-host conversations with Fish Audio and local Codex, lip-sync each host to the real audio, and render with HyperFrames.",
   openGraph: {
     title: "podframes",
     description: "Topic → multi-provider conversation → animated podcast video.",

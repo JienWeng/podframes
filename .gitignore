@@ -17,6 +17,7 @@ out/
 projects/*
 !projects/.gitkeep
 runs/
+library/
 
 # locally-fetched agent skills (pinned in skills-lock.json)
 .agents/
@@ -36,3 +37,6 @@ snapshots/
 # misc
 coverage/
 *.local
+
+# Durable local worker queue and request receipts
+.automation/

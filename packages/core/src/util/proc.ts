@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
 
 export interface RunOptions {
+  input?: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   /** Stream child stdout/stderr to the parent. */
@@ -24,8 +27,12 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
       env: opts.env ?? process.env,
-      stdio: opts.inherit ? ["ignore", "inherit", "pipe"] : ["ignore", "pipe", "pipe"],
+      signal: opts.signal,
+      timeout: opts.timeoutMs,
+      stdio: [opts.input !== undefined ? "pipe" : "ignore", opts.inherit ? "inherit" : "pipe", "pipe"],
     });
+    child.stdin?.on("error", () => {}); // Process errors/exit carry the actionable failure.
+    if (opts.input !== undefined) child.stdin?.end(opts.input);
 
     let stdout = "";
     let stderr = "";

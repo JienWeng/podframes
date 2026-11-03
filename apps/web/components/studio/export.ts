@@ -1,9 +1,9 @@
 import type { TurnRegion } from "./api";
+import { buildCaptionGroups, scriptCaptionTurns } from "@podframes/core/captions";
 
 /**
  * Caption/export helpers for the Studio. Builds SRT/VTT subtitle tracks from the
- * conversation's word-level timestamps (a cheap way to show off Speechbase word
- * alignment) and triggers client-side downloads of the rendered MP4 / audio.
+ * script with measured audio timing, and downloads rendered MP4 / audio.
  */
 
 interface Cue {
@@ -13,30 +13,8 @@ interface Cue {
 }
 
 /** Group each turn's words into short, readable caption cues. */
-function captionCues(regions: TurnRegion[], maxWords = 8, maxDur = 3.2): Cue[] {
-  const cues: Cue[] = [];
-  for (const r of regions) {
-    let buf: TurnRegion["words"] = [];
-    const flush = () => {
-      if (!buf.length) return;
-      cues.push({
-        start: buf[0].start,
-        end: buf[buf.length - 1].end,
-        text: buf.map((w) => w.text).join(" ").replace(/\s+/g, " ").trim(),
-      });
-      buf = [];
-    };
-    for (const w of r.words) {
-      buf.push(w);
-      if (buf.length >= maxWords || w.end - buf[0].start >= maxDur) flush();
-    }
-    flush();
-    // Turn with no word-level timing → one cue spanning the whole region.
-    if (r.words.length === 0 && r.text?.trim()) {
-      cues.push({ start: r.start, end: r.end, text: r.text.trim() });
-    }
-  }
-  return cues.filter((c) => c.text);
+function captionCues(regions: TurnRegion[]): Cue[] {
+  return buildCaptionGroups(scriptCaptionTurns(regions), 8, true);
 }
 
 /** Format seconds as HH:MM:SS,mmm (SRT) or HH:MM:SS.mmm (VTT). Total-ms first so

@@ -1,282 +1,90 @@
 import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
-import { PatchBay } from "@/components/PatchBay";
 import { ShowcaseClips } from "@/components/ShowcaseClips";
-import { PIPELINE, SITE } from "@/lib/site";
-import { PROVIDERS } from "@/lib/providers";
+import { ROSTER, rosterThumb } from "@/lib/roster";
+import { SITE } from "@/lib/site";
 
 export default function Home() {
   return (
     <>
       <Nav />
       <main>
-        <Hero />
-        <Showcase />
-        <Pipeline />
-        <Providers />
-        <Constraint />
-        <Quickstart />
-        <CtaBand />
+        <section className="landing-hero overflow-hidden">
+          <div className="mx-auto grid max-w-7xl items-center gap-12 px-6 py-16 sm:px-10 lg:grid-cols-[1.1fr_1fr] lg:py-24">
+            <div>
+              <p className="mb-6 text-sm font-semibold text-[var(--color-accent)]">A studio for your next conversation</p>
+              <h1 className="max-w-2xl text-5xl font-extrabold leading-[1.02] tracking-[-0.045em] sm:text-6xl xl:text-7xl">Big ideas.<br />Real conversation.<br /><span className="text-[var(--color-accent)]">Press play.</span></h1>
+              <p className="mt-7 max-w-lg text-lg leading-relaxed text-[var(--color-text-secondary)]">Turn a topic or script into a two-host podcast video. Cast your characters, shape every line, and make it yours.</p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link href="/studio" className="btn btn-primary px-6 py-3 text-base">Create an episode →</Link>
+                <a href="#showcase" className="btn btn-ghost px-6 py-3 text-base">Watch the possibilities</a>
+              </div>
+              <p className="mt-6 text-sm text-[var(--color-text-muted)]">Your characters. Your voices. Your creative direction.</p>
+            </div>
+            <div className="panel overflow-hidden p-4 sm:p-6">
+              <div className="mb-5 flex items-center justify-between"><span className="text-sm font-semibold">In the studio</span><span className="rounded-full bg-[var(--color-surface-2)] px-3 py-1 text-xs text-[var(--color-accent)]">Two hosts · endless stories</span></div>
+              <div className="grid grid-cols-2 gap-3">
+                {[ROSTER[1], ROSTER[0]].map((host) => <div key={host.key} className="relative aspect-[3/4] overflow-hidden rounded-2xl bg-[var(--color-surface-2)]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={rosterThumb(host.key)} alt={`${host.name}, a Podframes host`} className="h-full w-full object-cover" />
+                  <span className="absolute bottom-3 left-3 rounded-full bg-[#15271fe8] px-3 py-1 text-sm font-semibold text-white">{host.name}</span>
+                </div>)}
+              </div>
+              <div className="mt-4 rounded-xl bg-[var(--color-surface-2)] p-4">
+                <p className="text-sm font-semibold">What makes a good cold open?</p>
+                <p className="mt-2 text-sm leading-relaxed text-[var(--color-text-secondary)]">A question that makes you want to hear the answer. Give your hosts something worth talking about.</p>
+                <div className="mt-4 flex items-center gap-3 text-xs text-[var(--color-text-muted)]"><span className="text-[var(--color-accent)]">●</span> Cast <span>—</span> Script <span>—</span> Video <span>—</span> Export</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="showcase" className="mx-auto max-w-7xl px-6 py-20 sm:px-10">
+          <div className="mb-10 flex flex-wrap items-end justify-between gap-5">
+            <div><p className="mb-3 text-sm font-semibold text-[var(--color-accent)]">Made in Podframes</p><h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Conversations you can watch.</h2></div>
+            <Link href="/studio" className="text-sm font-semibold text-[var(--color-accent)]">Make your own →</Link>
+          </div>
+          <ShowcaseClips />
+        </section>
+
+        <section id="pipeline" className="border-y border-[var(--color-hairline)] bg-[var(--color-surface)]">
+          <div className="mx-auto grid max-w-7xl gap-12 px-6 py-20 sm:px-10 lg:grid-cols-[1fr_1.4fr]">
+            <div><p className="mb-3 text-sm font-semibold text-[var(--color-accent)]">From spark to screen</p><h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Direct the details.<br />Or let it flow.</h2><p className="mt-5 text-base leading-relaxed text-[var(--color-text-secondary)]">Generate a full episode, then refine the moments that matter. Your saved cast and style are ready for the next one.</p></div>
+            <ol className="divide-y divide-[var(--color-hairline)]">
+              {[
+                ["Bring an idea", "Start with a topic, source links, or your own Markdown or text script. Set the language and target length."],
+                ["Give it a voice", "Choose your characters and Fish Audio voices. Edit the dialogue and direct how each line feels."],
+                ["Make it move", "Generate talking hosts, add supporting visuals, and refine script-based captions."],
+                ["Ready for its audience", "Review the episode and export your video, audio, or captions."],
+              ].map(([title, copy], i) => <li key={title} className="flex gap-5 py-6 first:pt-0"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-sm font-semibold text-[var(--color-accent)]">{i + 1}</span><div><h3 className="text-lg font-semibold">{title}</h3><p className="mt-2 text-sm leading-relaxed text-[var(--color-text-secondary)]">{copy}</p></div></li>)}
+            </ol>
+          </div>
+        </section>
+
+        <section id="providers" className="mx-auto max-w-7xl px-6 py-20 sm:px-10">
+          <div className="grid items-center gap-10 lg:grid-cols-2">
+            <div className="grid grid-cols-3 gap-3">{ROSTER.slice(2, 5).map((host) => <div key={host.key} className="overflow-hidden rounded-2xl bg-[var(--color-surface-2)]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={rosterThumb(host.key)} alt={host.name} className="aspect-[3/4] w-full object-cover" />
+              <p className="px-4 py-3 text-sm font-semibold">{host.name}</p>
+            </div>)}</div>
+            <div className="lg:pl-8"><p className="mb-3 text-sm font-semibold text-[var(--color-accent)]">A cast with character</p><h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Find your voices.<br />Keep your chemistry.</h2><p className="mt-5 text-base leading-relaxed text-[var(--color-text-secondary)]">Pick a portrait, upload your own, or generate a new character. Save an episode as a template to bring the same hosts and styling into your next conversation.</p><Link href="/studio?new=1" className="btn btn-ghost mt-6 px-5 py-2">Meet your cast →</Link></div>
+          </div>
+        </section>
+
+        <section id="quickstart" className="border-t border-[var(--color-hairline)]">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-8 px-6 py-16 sm:px-10">
+            <div><h2 className="text-2xl font-bold tracking-tight">Built for your workflow.</h2><p className="mt-3 max-w-xl text-sm leading-relaxed text-[var(--color-text-secondary)]">Local Codex, Fish Audio, HeyGen, P-Video, LTX, and HyperFrames. Use the studio or automate episodes through the CLI.</p></div>
+            <a href={SITE.github} target="_blank" rel="noreferrer" className="btn btn-ghost px-5 py-3">Explore the open-source project ↗</a>
+          </div>
+        </section>
+        <section className="bg-[var(--color-accent-fill)] px-6 py-20 text-center text-[var(--color-accent-fg)]">
+          <h2 className="text-4xl font-extrabold tracking-tight sm:text-5xl">What are we talking about next?</h2>
+          <Link href="/studio" className="btn mt-8 bg-[#17372b] px-7 py-3 text-base text-white hover:bg-[#244b3b]">Open your studio →</Link>
+        </section>
       </main>
       <Footer />
     </>
-  );
-}
-
-function Hero() {
-  return (
-    <section className="relative overflow-hidden border-b border-[var(--color-hairline)]">
-      <div className="accent-glow pointer-events-none absolute inset-0" />
-      <div className="hairline-grid pointer-events-none absolute inset-0 opacity-40" />
-      <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 py-20 lg:grid-cols-2 lg:py-28">
-        <div className="animate-rise">
-          <div className="mono mb-5 inline-flex items-center gap-2 rounded-none border border-[var(--color-hairline)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-text-secondary)]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
-            OPEN SOURCE · POWERED BY SPEECHBASE
-          </div>
-          <h1 className="text-balance text-5xl font-extrabold leading-[1.04] tracking-tight sm:text-6xl">
-            Turn a topic into a podcast{" "}
-            <span className="text-[var(--color-accent)]">you can watch.</span>
-          </h1>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed text-[var(--color-text-secondary)]">
-            podframes writes a two-host script, mixes <strong className="text-[var(--color-text)]">different TTS
-            providers</strong> into one conversation with Speechbase, and animates each host{" "}
-            <strong className="text-[var(--color-text)]">lip-synced to the real audio</strong> — a captioned,
-            watchable episode from a single line of input.
-          </p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link href="/studio" className="btn btn-primary px-5 py-3 text-base">
-              Open the studio →
-            </Link>
-            <a href={SITE.github} className="btn btn-ghost px-5 py-3 text-base" target="_blank" rel="noreferrer">
-              View source
-            </a>
-          </div>
-          <div className="mono mt-8 flex flex-wrap gap-x-6 gap-y-2 text-xs text-[var(--color-text-muted)]">
-            <span>Speechbase conversations</span>
-            <span>·</span>
-            <span>Nano Banana 2</span>
-            <span>·</span>
-            <span>P-Video Avatar lip-sync</span>
-            <span>·</span>
-            <span>HyperFrames</span>
-          </div>
-        </div>
-        <div className="animate-rise panel p-6 lg:p-8" style={{ animationDelay: "0.12s" }}>
-          <PatchBay />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Showcase() {
-  return (
-    <section id="showcase" className="relative overflow-hidden border-b border-[var(--color-hairline)]">
-      <div className="hairline-grid pointer-events-none absolute inset-0 opacity-30" />
-      <div className="relative mx-auto max-w-6xl px-5 py-20">
-        <SectionHead
-          kicker="SEE IT IN MOTION"
-          title="Talking AI hosts, lip-synced to every word"
-          sub="No editor, no timeline. The video below was generated by podframes — script, mixed voices, animated avatars, captions, and all. Below it, real episodes rendered the same way."
-        />
-
-        {/* Hero demo — the product demoing itself (YouTube) */}
-        <div className="panel animate-rise mt-12 aspect-video overflow-hidden bg-black">
-          <iframe
-            className="h-full w-full"
-            src="https://www.youtube-nocookie.com/embed/YP75ParZdqQ?rel=0"
-            title="Podframes — turn a topic into a video podcast with talking AI avatars"
-            loading="lazy"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowFullScreen
-          />
-        </div>
-
-        {/* Vertical episode gallery */}
-        <div className="mt-12">
-          <div className="mono mb-5 text-xs tracking-[0.2em] text-[var(--color-text-muted)]">
-            REAL EPISODES · RENDERED, NOT EDITED
-          </div>
-          <ShowcaseClips />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Pipeline() {
-  return (
-    <section id="pipeline" className="mx-auto max-w-6xl px-5 py-20">
-      <SectionHead
-        kicker="THE PIPELINE"
-        title="Six steps, one command"
-        sub="Every stage is a typed module in @podframes/core. Run the whole thing, or resume from any step."
-      />
-      <div className="mt-12 grid gap-px overflow-hidden rounded-none border border-[var(--color-hairline)] bg-[var(--color-hairline)] sm:grid-cols-2 lg:grid-cols-3">
-        {PIPELINE.map((s) => (
-          <div key={s.n} className="group bg-[var(--color-surface)] p-7 transition-colors hover:bg-[var(--color-surface-2)]">
-            <div className="flex items-center justify-between">
-              <span className="mono text-sm text-[var(--color-text-muted)]">{s.n}</span>
-              <span className="mono rounded-none border border-[var(--color-hairline)] px-2.5 py-1 text-[11px] text-[var(--color-accent)]">
-                {s.tech}
-              </span>
-            </div>
-            <h3 className="mt-4 text-xl font-bold">{s.title}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-[var(--color-text-secondary)]">{s.blurb}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function Providers() {
-  return (
-    <section id="providers" className="border-y border-[var(--color-hairline)] bg-[var(--color-surface)]/40">
-      <div className="mx-auto max-w-6xl px-5 py-20">
-        <SectionHead
-          kicker="THE MIX"
-          title="Any voices. Any providers. One conversation."
-          sub="This is the whole point. Give each host a different provider and Speechbase returns a single, leveled, word-aligned track — one clean conversation, whoever you cast."
-        />
-        <div className="mt-12 flex flex-wrap gap-3">
-          {PROVIDERS.map((p) => (
-            <div
-              key={p.id}
-              className="flex items-center gap-2.5 rounded-none border border-[var(--color-hairline)] bg-[var(--color-surface)] px-4 py-3"
-            >
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ background: p.color, boxShadow: `0 0 12px ${p.color}` }}
-              />
-              <span className="text-sm font-semibold">{p.label}</span>
-              {p.models?.[0] && (
-                <span className="mono text-[11px] text-[var(--color-text-muted)]">{p.models[0].label}</span>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Constraint() {
-  // The honest-menu section: two real providers, one real trade-off.
-  return (
-    <section className="mx-auto max-w-6xl px-5 py-20">
-      <SectionHead
-        kicker="THE HONEST PART"
-        title="Two ways to animate — pick your trade-off"
-        sub="The Speechbase conversation is always the hero audio. What changes is how the hosts lip-sync to it."
-      />
-      <div className="mt-10 grid gap-6 lg:grid-cols-2">
-        <div className="panel p-7">
-          <h3 className="text-lg font-bold text-[var(--color-success)]">P-Video Avatar · default</h3>
-          <p className="mt-3 text-sm leading-relaxed text-[var(--color-text-secondary)]">
-            One clip per line on Replicate&apos;s Pruna AI p-video-avatar, <strong className="text-[var(--color-text)]">lip-synced
-            to that turn&apos;s real audio</strong>. Faster and ~4× cheaper (~$0.025/s at 720p), with per-clip regeneration.
-          </p>
-        </div>
-        <div className="panel p-7">
-          <h3 className="text-lg font-bold text-[var(--color-accent)]">LTX-2.3 · higher fidelity</h3>
-          <p className="mt-3 text-sm leading-relaxed text-[var(--color-text-secondary)]">
-            The same per-turn lip-sync shape on fal.ai LTX-2.3 with stronger fidelity and natural variety.
-            ~$0.10 per second of video. One click to switch, per-clip regeneration either way.
-          </p>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Quickstart() {
-  return (
-    <section id="quickstart" className="border-t border-[var(--color-hairline)]">
-      <div className="mx-auto max-w-6xl px-5 py-20">
-        <SectionHead kicker="QUICKSTART" title="Three keys, one command" />
-        <div className="mt-10 grid gap-6 lg:grid-cols-2">
-          <Code
-            label="1 · cp .env.example .env.local, add your keys"
-            lines={["SPEECHBASE_API_KEY=sk_...", "GEMINI_API_KEY=AIza...", "REPLICATE_API_KEY=r8_..."]}
-          />
-          <Code
-            label="2 · generate"
-            lines={[
-              "pnpm install",
-              'pnpm podframes generate \\',
-              '  --topic "Why is the sky blue?" \\',
-              "  --turns 10",
-            ]}
-          />
-        </div>
-        <p className="mt-6 text-sm text-[var(--color-text-secondary)]">
-          Prefer a UI?{" "}
-          <Link href="/studio" className="text-[var(--color-accent)] hover:underline">
-            Open the studio
-          </Link>{" "}
-          to pick voices and watch the pipeline run live.
-        </p>
-      </div>
-    </section>
-  );
-}
-
-function CtaBand() {
-  return (
-    <section className="relative overflow-hidden border-t border-[var(--color-hairline)]">
-      <div className="accent-glow pointer-events-none absolute inset-0" />
-      <div className="relative mx-auto max-w-3xl px-5 py-24 text-center">
-        <h2 className="text-balance text-4xl font-extrabold tracking-tight sm:text-5xl">
-          Make your first episode.
-        </h2>
-        <p className="mx-auto mt-5 max-w-xl text-lg text-[var(--color-text-secondary)]">
-          A topic goes in. A captioned, animated, multi-voice podcast video comes out.
-        </p>
-        <div className="mt-8 flex justify-center gap-3">
-          <Link href="/studio" className="btn btn-primary px-6 py-3 text-base">
-            Open the studio →
-          </Link>
-          <a href={SITE.github} className="btn btn-ghost px-6 py-3 text-base">
-            Star on GitHub
-          </a>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ── small helpers ─────────────────────────────────────────────────────────────
-
-function SectionHead({ kicker, title, sub }: { kicker: string; title: string; sub?: string }) {
-  return (
-    <div className="max-w-2xl">
-      <div className="mono tech-prefix text-xs tracking-[0.25em] text-[var(--color-accent)]">{kicker}</div>
-      <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">{title}</h2>
-      {sub && <p className="mt-4 text-lg leading-relaxed text-[var(--color-text-secondary)]">{sub}</p>}
-    </div>
-  );
-}
-
-function Code({ label, lines }: { label: string; lines: string[] }) {
-  return (
-    <div className="panel overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-[var(--color-hairline)] px-4 py-3">
-        <span className="h-2.5 w-2.5 rounded-full bg-[var(--color-danger)]/70" />
-        <span className="h-2.5 w-2.5 rounded-full bg-[var(--color-warn)]/70" />
-        <span className="h-2.5 w-2.5 rounded-full bg-[var(--color-success)]/70" />
-        <span className="mono ml-2 text-xs text-[var(--color-text-muted)]">{label}</span>
-      </div>
-      <pre className="mono overflow-x-auto px-5 py-4 text-sm leading-relaxed text-[var(--color-text)]">
-        {lines.map((l, i) => (
-          <div key={i}>
-            <span className="select-none text-[var(--color-text-muted)]">$ </span>
-            {l}
-          </div>
-        ))}
-      </pre>
-    </div>
   );
 }

@@ -34,7 +34,8 @@ export interface ProviderSettingsProps {
 
 const REGISTRY: Record<string, React.FC<ProviderSettingsProps>> = {
   elevenlabs: ElevenLabsSettings,
-  google: GeminiSettings,
+  google: StyleSettings,
+  fish: StyleSettings,
 };
 
 export function ProviderSettings(props: ProviderSettingsProps) {
@@ -77,12 +78,12 @@ function ElevenLabsSettings(p: ProviderSettingsProps) {
   );
 }
 
-/** Gemini 3.1 Flash TTS — free-text natural-language direction for the read. */
-function GeminiSettings(p: ProviderSettingsProps) {
+/** Free-text direction encoded as a Fish Audio tag. */
+function StyleSettings(p: ProviderSettingsProps) {
   return (
     <Setting
       label="Style direction"
-      help="Plain-language direction Gemini interprets for the read — e.g. warm radio host, a little sarcastic."
+      help="Plain-language direction the speech model interprets for the read — e.g. warm radio host, a little sarcastic."
     >
       <input
         value={p.style}

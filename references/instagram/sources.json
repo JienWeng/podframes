@@ -1,0 +1,37 @@
+{
+  "purpose": "User-selected references for podcast conversation and delivery style",
+  "checkedOn": "2026-11-02",
+  "sources": [
+    {
+      "id": "Dd5bG7Zh0cu",
+      "url": "https://www.instagram.com/reel/Dd5bG7Zh0cu/",
+      "account": "talk168",
+      "access": "post_metadata_and_user_transcript",
+      "transcriptFile": "Dd5bG7Zh0cu.user-transcript.txt",
+      "transcriptProvenance": "user_supplied; matched by order and post topic; not checked against audio",
+      "transcriptVerified": false
+    },
+    {
+      "id": "DfOxx4YhofO",
+      "url": "https://www.instagram.com/reel/DfOxx4YhofO/",
+      "account": "talk168",
+      "access": "post_metadata_and_user_transcript",
+      "transcriptFile": "DfOxx4YhofO.user-transcript.txt",
+      "transcriptProvenance": "user_supplied; matched by order and post topic; not checked against audio; ending incomplete",
+      "transcriptVerified": false
+    },
+    {
+      "id": "De-_2sfhdo3",
+      "url": "https://www.instagram.com/reel/De-_2sfhdo3/",
+      "account": "talk168",
+      "access": "post_metadata_and_user_transcript",
+      "transcriptFile": "De-_2sfhdo3.user-transcript.txt",
+      "transcriptProvenance": "user_supplied; matched by post topic; not checked against audio; supplied text ends at 你看; completeness unverified",
+      "transcriptVerified": false
+    }
+  ],
+  "styleProfileReady": true,
+  "styleProfileBasis": "curated short excerpts and structural notes from three user-supplied transcripts",
+  "audioStyleVerified": false,
+  "activeReference": "examples/script-library/zh-00-talk168-user-excerpts.md"
+}

@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PICKABLE_PROVIDERS, providerById, providerColor } from "@/lib/providers";
+import { LANGUAGES } from "@podframes/core/shared";
 import { previewVoice, type ProjectDetail } from "@/components/studio/api";
 import { channelToHost } from "@/components/studio/host-channel";
 import { ProviderSettings, DEFAULT_STABILITY } from "@/components/studio/provider-settings";
 import { useWizard } from "./context";
 import { castToHosts, hostFace, type CastChannel } from "./cast";
+import { CastLibraryControls } from "./CastLibraryControls";
 import { FaceDialog } from "./FaceDialog";
 import { StepHeader, StepFooter, inputClass } from "./ui";
 
@@ -66,19 +68,20 @@ export function Step1Cast() {
 
   return (
     <div>
-      <StepHeader title="Who's talking, and how do they sound?" hint="Two hosts, each on its own voice. Click a face to pick a default or upload your own." />
+      <StepHeader title="Cast & voice" hint="Two hosts, each on its own voice. Click a face to pick a default or upload your own." />
+      {project?.templateSource && <p className="mb-4 border border-[var(--color-hairline)] p-3 text-xs text-[var(--color-text-secondary)]">Characters, voices, and styling copied from your template. {project.reusableImageCount} saved B-roll image{project.reusableImageCount === 1 ? "" : "s"} available for relevant moments. You can change either face below.</p>}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <span className="mono text-[10px] tracking-[0.08em] text-[var(--color-text-muted)]">FORMAT</span>
         <div className="flex gap-1 border border-[var(--color-hairline)] p-1">
           {(["9:16", "16:9"] as const).map((a) => (
-            <button key={a} onClick={() => void setFormat(a)} disabled={locked || busy} className="px-3 py-1 text-sm" style={{ background: aspect === a ? "var(--color-accent)" : "transparent", color: aspect === a ? "var(--color-accent-fg)" : "var(--color-text-secondary)" }}>{a}</button>
+            <button key={a} onClick={() => void setFormat(a)} disabled={locked || busy} className="px-3 py-1 text-sm" style={{ background: aspect === a ? "var(--color-accent-fill)" : "transparent", color: aspect === a ? "var(--color-accent-fg)" : "var(--color-text-secondary)" }}>{a}</button>
           ))}
         </div>
         <span className="mono ml-2 text-[10px] tracking-[0.08em] text-[var(--color-text-muted)]">RES</span>
         <div className="flex gap-1 border border-[var(--color-hairline)] p-1">
           {(["720p", "1080p"] as const).map((r) => (
-            <button key={r} onClick={() => void setRes(r)} disabled={locked || busy} className="px-3 py-1 text-sm" style={{ background: resolution === r ? "var(--color-accent)" : "transparent", color: resolution === r ? "var(--color-accent-fg)" : "var(--color-text-secondary)" }}>{r}</button>
+            <button key={r} onClick={() => void setRes(r)} disabled={locked || busy} className="px-3 py-1 text-sm" style={{ background: resolution === r ? "var(--color-accent-fill)" : "transparent", color: resolution === r ? "var(--color-accent-fg)" : "var(--color-text-secondary)" }}>{r}</button>
           ))}
         </div>
         <span className="text-[11px] text-[var(--color-text-muted)]">
@@ -87,13 +90,21 @@ export function Step1Cast() {
       </div>
 
       <div className="space-y-3">
+        <div className="mb-4">
+          <label htmlFor="episode-language" className="mono mb-1.5 block text-[10px] tracking-[0.08em] text-[var(--color-text-muted)]">LANGUAGE</label>
+          <select id="episode-language" value={ctx.language} onChange={(e) => ctx.setLanguage(e.target.value)} disabled={locked || busy} className={inputClass}>
+            {!LANGUAGES.some((language) => language.code === ctx.language) && <option value={ctx.language}>{ctx.language}</option>}
+            {LANGUAGES.map((language) => <option key={language.code} value={language.code}>{language.label}</option>)}
+          </select>
+          <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">Used for new scripts and voice previews. Rewrite an existing script to change its language.</p>
+        </div>
         {cast.map((ch, i) => (
           <HostEditor key={i} index={i} ch={ch} disabled={locked} onEditFace={() => setDialogIndex(i)} />
         ))}
       </div>
 
       <StepFooter>
-        <button onClick={() => ctx.go(2)} disabled={locked} className="btn btn-primary px-5 py-2 text-sm disabled:opacity-50">Next: Script →</button>
+        <button onClick={() => ctx.go(2)} disabled={locked} className="btn btn-primary px-5 py-2 text-sm disabled:opacity-50">Continue to Script →</button>
       </StepFooter>
 
       {dialogIndex != null && cast[dialogIndex] && (
@@ -111,12 +122,11 @@ function HostEditor({ index, ch, disabled, onEditFace }: { index: number; ch: Ca
   const face = hostFace(ctx.project, ctx.slug, ch);
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState("");
   const [sampleText, setSampleText] = useState("");
-  const urlRef = useRef<string>("");
   const destructiveAck = useRef<Set<string>>(new Set());
 
-  // Free the last sample blob when this strip unmounts.
-  useEffect(() => () => { if (urlRef.current) URL.revokeObjectURL(urlRef.current); }, []);
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
   const update = (patch: Partial<CastChannel>) =>
     ctx.setCast((cs) => cs.map((c, i) => (i === index ? { ...c, ...patch } : c)));
@@ -135,7 +145,7 @@ function HostEditor({ index, ch, disabled, onEditFace }: { index: number; ch: Ca
       title: kind === "voice" ? "Change voice settings?" : kind === "flip" ? "Flip avatar?" : "Change avatar?",
       body:
         kind === "voice"
-          ? "Changing the provider, voice, or voice settings re-synthesizes this host's audio and invalidates the affected generated clips."
+          ? "Changing the provider, speech model, voice, or voice settings re-synthesizes this host's audio and invalidates the affected generated clips."
           : kind === "flip"
             ? "Flipping the avatar is baked into generated clips, so existing videos need to be regenerated."
             : "Changing the avatar replaces the base image used for video generation.",
@@ -176,19 +186,19 @@ function HostEditor({ index, ch, disabled, onEditFace }: { index: number; ch: Ca
     setPreviewing(true);
     setPreviewError(null);
     try {
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current); // free the prior sample
-      urlRef.current = await previewVoice({
+      const url = await previewVoice({
+        language: ctx.language,
         model: ch.model,
         voice: ch.voice,
         stability: ch.stability,
         style: ch.style,
         ...(sampleText.trim() ? { text: sampleText.trim() } : {}),
       });
-      await new Audio(urlRef.current).play();
+      setPreviewUrl(url);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setPreviewError(
-        msg.includes("SPEECHBASE_API_KEY") ? "SPEECHBASE_API_KEY not set — add it to .env.local" : msg,
+        msg,
       );
     } finally {
       setPreviewing(false);
@@ -196,7 +206,7 @@ function HostEditor({ index, ch, disabled, onEditFace }: { index: number; ch: Ca
   }
 
   return (
-    <div className="border border-[var(--color-hairline)] bg-[var(--color-surface)] p-3.5" style={{ borderLeft: `3px solid ${color}` }}>
+    <div className="border border-[var(--color-hairline)] bg-[var(--color-surface)] p-3.5">
       <div className="mono mb-2.5 flex items-center justify-between text-[10px] tracking-wider text-[var(--color-text-muted)]">
         <span>ch {String.fromCharCode(97 + index)} · {provider?.label ?? ch.provider}</span>
         <span className="h-2 w-2 rounded-full" style={{ background: color, boxShadow: `0 0 8px ${color}` }} />
@@ -209,7 +219,7 @@ function HostEditor({ index, ch, disabled, onEditFace }: { index: number; ch: Ca
             onClick={onEditFace}
             disabled={disabled}
             aria-label="Edit host face"
-            className="group relative block h-[68px] w-[68px] overflow-hidden bg-[var(--color-surface-2)] disabled:opacity-60"
+            className="group relative block h-[88px] w-[88px] rounded-xl overflow-hidden bg-[var(--color-surface-2)] disabled:opacity-60"
             style={{ border: `1px solid ${color}` }}
           >
             {face ? (
@@ -218,7 +228,7 @@ function HostEditor({ index, ch, disabled, onEditFace }: { index: number; ch: Ca
             ) : (
               <div className="flex h-full w-full items-center justify-center text-lg" style={{ color, transform: ch.flip ? "scaleX(-1)" : undefined }}>{ch.name.slice(0, 1) || "?"}</div>
             )}
-            <span className="absolute inset-x-0 bottom-0 bg-[#100f0ecc] py-0.5 text-center text-[9px] text-[var(--color-text-secondary)] opacity-0 transition-opacity group-hover:opacity-100">edit</span>
+            <span className="absolute inset-x-0 bottom-0 bg-[#100f0ecc] py-0.5 text-center text-[9px] text-white opacity-0 transition-opacity group-hover:opacity-100">edit</span>
           </button>
           <button
             onClick={() => void toggleFlip()}
@@ -226,24 +236,41 @@ function HostEditor({ index, ch, disabled, onEditFace }: { index: number; ch: Ca
             title="Flip left/right"
             aria-label="Flip left/right"
             aria-pressed={!!ch.flip}
-            className="mt-1.5 flex h-6 w-[68px] items-center justify-center gap-1 border text-[12px] disabled:opacity-40"
+            className="mt-1.5 flex h-8 w-[88px] items-center justify-center gap-1 border text-[12px] disabled:opacity-40"
             style={{ borderColor: ch.flip ? "var(--color-accent)" : "var(--color-hairline)", color: ch.flip ? "var(--color-accent)" : "var(--color-text-secondary)" }}
           >
             ⇄ flip
           </button>
         </div>
         <div className="min-w-0 flex-1 space-y-2">
-          <input value={ch.name} disabled={disabled} onChange={(e) => update({ name: e.target.value })} placeholder="Name" className={`${inputClass} font-semibold`} />
+          <input aria-label={`Name for host ${index + 1}`} value={ch.name} disabled={disabled} onChange={(e) => update({ name: e.target.value })} placeholder="Name" className={`${inputClass} font-semibold`} />
           <div className="grid grid-cols-2 gap-2">
-            <select value={ch.provider} disabled={disabled} onChange={(e) => void changeProvider(e.target.value)} className={inputClass}>
+            <select aria-label={`Voice provider for ${ch.name}`} value={ch.provider} disabled={disabled} onChange={(e) => void changeProvider(e.target.value)} className={inputClass}>
+              {!PICKABLE_PROVIDERS.some((p) => p.id === ch.provider) && <option value={ch.provider} disabled>{ch.provider} (legacy)</option>}
               {PICKABLE_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
             </select>
-            <select value={ch.voice} disabled={disabled} onChange={(e) => void updateVoice({ voice: e.target.value })} className={inputClass}>
+            <select aria-label={`Voice for ${ch.name}`} value={ch.voice} disabled={disabled} onChange={(e) => void updateVoice({ voice: e.target.value })} className={inputClass}>
+              {!model?.voices.some((v) => v.id === ch.voice) && <option value={ch.voice}>Custom voice</option>}
               {model?.voices.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
             </select>
           </div>
+          <label className="block text-xs font-medium text-[var(--color-text-secondary)]">
+            Speech model
+            <select aria-label={`Speech model for ${ch.name}`} value={ch.model} disabled={disabled} onChange={(event) => void updateVoice({ model: event.target.value })} className={`${inputClass} mt-1`}>
+              {!provider?.models?.some((candidate) => candidate.id === ch.model) && <option value={ch.model} disabled>{ch.model} (saved model)</option>}
+              {provider?.models?.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.label}</option>)}
+            </select>
+          </label>
+          <p className="text-xs text-[var(--color-text-muted)]">{ch.model === "fish/drama-3" ? "Expressive acting and dialogue with free-form delivery directions." : "Stable speech generation with delivery directions."} Uses Fish website credits.</p>
+          <input value={ch.voice} disabled={disabled} onChange={(e) => void updateVoice({ voice: e.target.value })} placeholder="Fish Audio voice reference ID" aria-label="Fish Audio voice reference ID" className={inputClass} />
+          <p className="text-[11px] text-[var(--color-text-muted)]">
+            <a href="https://fish.audio" target="_blank" rel="noreferrer" className="text-[var(--color-accent)] hover:underline">Browse Fish Audio voices ↗</a>
+            {" · Copy the ID after /m/ in a voice link into the field above."}
+          </p>
         </div>
       </div>
+
+      <CastLibraryControls channel={ch} disabled={disabled || ctx.busy} />
 
       <ProviderSettings
         provider={ch.provider}
@@ -270,6 +297,12 @@ function HostEditor({ index, ch, disabled, onEditFace }: { index: number; ch: Ca
       <button onClick={preview} disabled={previewing || disabled} className="mt-2 flex w-full items-center justify-center gap-2 border px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ borderColor: color, color }}>
         {previewing ? "Synthesizing…" : "▶ Preview voice"}
       </button>
+      {previewUrl && (
+        <div className="mt-2">
+          <p role="status" className="mb-1 text-[11px] text-[var(--color-text-muted)]">Preview ready. Press play below.</p>
+          <audio controls src={previewUrl} preload="metadata" aria-label={`Voice preview for ${ch.name}`} className="w-full" />
+        </div>
+      )}
       {previewError && (
         <div className="mt-1.5 text-[11px] text-[var(--color-danger)]">{previewError}</div>
       )}

@@ -1,5 +1,5 @@
 import { fileExists } from "../util/fs";
-import type { GeminiClient } from "../clients/gemini";
+import type { CodexClient } from "../clients/codex";
 import type { Project } from "../project";
 import type { StageContext } from "./context";
 import type { AvatarImagesArtifact, Host, HostAvatarImage } from "../types";
@@ -29,8 +29,12 @@ function neutralHostPrompt(h: Host, bible: string): string {
   ].join(" ");
 }
 
+export function avatarPrompt(host: Host, aspect: string): string {
+  return neutralHostPrompt(host, studioBible(aspect));
+}
+
 export async function runStills(ctx: StageContext): Promise<void> {
-  const { project, gemini, reporter } = ctx;
+  const { project, codex, reporter } = ctx;
   const log = reporter.stage("stills");
   const { config, options } = project.state;
   const aspect = config.aspectRatio ?? "16:9";
@@ -70,7 +74,7 @@ export async function runStills(ctx: StageContext): Promise<void> {
         const imagePath = project.path("stills", `${h.id}-avatar.png`);
         if (!fileExists(imagePath)) {
           log.info(`generating ${h.name} base avatar`);
-          await gemini.generateImageToFile({
+          await codex.generateImageToFile({
             model: options.imageModel,
             prompt: neutralHostPrompt(h, bible),
             aspectRatio: aspect,
@@ -97,7 +101,7 @@ export async function runStills(ctx: StageContext): Promise<void> {
  * this for roster hosts; it exists for API/CLI callers that only provide text.
  * Mutates `project.state.stills` but does NOT save or invalidate downstream.
  */
-export async function castHost(project: Project, gemini: GeminiClient, hostId: string): Promise<HostAvatarImage> {
+export async function castHost(project: Project, codex: Pick<CodexClient, "generateImageToFile">, hostId: string): Promise<HostAvatarImage> {
   const { config, options } = project.state;
   const aspect = config.aspectRatio ?? "16:9";
   const host = config.hosts.find((h) => h.id === hostId);
@@ -112,7 +116,7 @@ export async function castHost(project: Project, gemini: GeminiClient, hostId: s
     imageRel = uploaded;
   } else {
     const imagePath = project.path("stills", `${hostId}-avatar.png`);
-    await gemini.generateImageToFile({
+    await codex.generateImageToFile({
       model: options.imageModel,
       prompt: neutralHostPrompt(host, bible),
       aspectRatio: aspect,

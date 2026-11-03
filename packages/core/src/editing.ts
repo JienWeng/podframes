@@ -1,6 +1,6 @@
 import type { Project } from "./project";
 import type { ProjectState, StageName } from "./types";
-import { remove } from "./util/fs";
+import { readJson, remove } from "./util/fs";
 import { join } from "node:path";
 
 type ArtifactKey = "script" | "speech" | "stills" | "clips" | "broll" | "composition" | "output";
@@ -67,7 +67,20 @@ export async function clearTurnClips(project: Project, turnIndices: number[]): P
   // turn's standalone audio (audio/turn-N-*.mp3) is preserved, since this path is for
   // audio-preserving edits (gesture/face/re-roll).
   for (const c of existing) {
-    if (c.turnIndex != null && set.has(c.turnIndex)) await remove(project.abs(c.path));
+    if (c.turnIndex != null && set.has(c.turnIndex)) {
+      await remove(project.abs(c.path));
+      await remove(project.abs(`${c.path}.heygen.json`));
+    }
+  }
+  // A failed remote job has no clip yet. Explicit retry can replace it; a
+  // still-running or uncertain job must keep its ID to avoid buying it twice.
+  for (const turn of project.state.speech?.turns ?? []) {
+    if (!set.has(turn.turnIndex)) continue;
+    for (let i = 0; i < turn.segments.length; i++) {
+      const sidecar = project.path("clips", `turn-${turn.turnIndex}-${i}.mp4.heygen.json`);
+      const pending = await readJson<{ terminalFailed?: boolean }>(sidecar).catch(() => null);
+      if (pending?.terminalFailed) await remove(sidecar);
+    }
   }
   if (project.state.clips) {
     project.state.clips.clips = existing.filter((c) => c.turnIndex == null || !set.has(c.turnIndex));

@@ -3,7 +3,7 @@
  *
  *   pnpm tsx scripts/showcase.mts [count]   # default: all clips
  *
- * Builds a roster of 6 hosts (mixing Gemini + ElevenLabs voices), generates each
+ * Builds a roster of 6 hosts (using Fish Audio voices), generates each
  * host's 9:16 still once, then runs N short clips (2-3 turns) reusing those stills
  * — every clip a different host pairing, caption style, and topic. Resumable.
  */
@@ -14,8 +14,7 @@ import { fileURLToPath } from "node:url";
 import {
   generate,
   Project,
-  GeminiClient,
-  resolveEnv,
+  CodexClient,
   MODELS,
   type ConversationConfig,
   type Host,
@@ -24,11 +23,6 @@ import {
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ROSTER_DIR = join(ROOT, "projects", "_roster");
-
-// ── ElevenLabs voice tuning for an expressive, lively read (eleven_v3) ─────────
-const EXPRESSIVE = {
-  voice_settings: { stability: 0.4, similarity_boost: 0.85, style: 0.45, use_speaker_boost: true },
-};
 
 interface RosterHost {
   key: string;
@@ -40,19 +34,19 @@ interface RosterHost {
   providerOptions?: Record<string, unknown>;
 }
 
-// 3 Gemini-voiced + 3 ElevenLabs-voiced; clips always pair one of each.
+// Fish Audio voices paired with the existing host portraits.
 const ROSTER: RosterHost[] = [
-  { key: "ada", name: "Ada", model: "google/gemini-3.1-flash-tts-preview", voice: "Aoede", persona: "warm, curious lead host", appearance: "East Asian woman early 30s, sleek straight black shoulder-length hair, light warm skin, olive blazer over a white tee, friendly expressive face" },
-  { key: "sol", name: "Sol", model: "google/gemini-3.1-flash-tts-preview", voice: "Puck", persona: "laid-back, funny", appearance: "Latino man mid-30s, short dark wavy hair, trimmed beard, warm olive skin, denim shirt, relaxed grin" },
-  { key: "nia", name: "Nia", model: "google/gemini-3.1-flash-tts-preview", voice: "Leda", persona: "precise, endlessly curious", appearance: "South Asian woman late 20s, long dark wavy hair, brown skin, emerald green blouse, thoughtful" },
-  { key: "theo", name: "Theo", model: "elevenlabs/eleven_v3", voice: "bIHbv24MWmeRgasZH58o", persona: "lively, energetic", appearance: "white man late 30s, light stubble, glasses, fair skin, charcoal henley, animated", providerOptions: EXPRESSIVE },
-  { key: "maya", name: "Maya", model: "elevenlabs/eleven_v3", voice: "EXAVITQu4vr4xnSDxMaL", persona: "sharp, witty", appearance: "Black woman early 30s, voluminous natural curls, warm brown skin, mustard turtleneck, expressive", providerOptions: EXPRESSIVE },
-  { key: "ren", name: "Ren", model: "elevenlabs/eleven_v3", voice: "iP95p4xoKVk53GoZ742B", persona: "deadpan, clever", appearance: "East Asian man early 30s, modern undercut hairstyle, light skin, black bomber jacket, cool composed", providerOptions: EXPRESSIVE },
+  { key: "ada", name: "Ada", model: "fish/s2.1-pro", voice: "ca3007f96ae7499ab87d27ea3599956a", persona: "warm, curious lead host", appearance: "East Asian woman early 30s, sleek straight black shoulder-length hair, light warm skin, olive blazer over a white tee, friendly expressive face" },
+  { key: "sol", name: "Sol", model: "fish/s2.1-pro", voice: "9a9cf47702da476aa4629e2506d4a857", persona: "laid-back, funny", appearance: "Latino man mid-30s, short dark wavy hair, trimmed beard, warm olive skin, denim shirt, relaxed grin" },
+  { key: "nia", name: "Nia", model: "fish/s2.1-pro", voice: "ca3007f96ae7499ab87d27ea3599956a", persona: "precise, endlessly curious", appearance: "South Asian woman late 20s, long dark wavy hair, brown skin, emerald green blouse, thoughtful" },
+  { key: "theo", name: "Theo", model: "fish/s2.1-pro", voice: "9a9cf47702da476aa4629e2506d4a857", persona: "lively, energetic", appearance: "white man late 30s, light stubble, glasses, fair skin, charcoal henley, animated" },
+  { key: "maya", name: "Maya", model: "fish/s2.1-pro", voice: "ca3007f96ae7499ab87d27ea3599956a", persona: "sharp, witty", appearance: "Black woman early 30s, voluminous natural curls, warm brown skin, mustard turtleneck, expressive" },
+  { key: "ren", name: "Ren", model: "fish/s2.1-pro", voice: "9a9cf47702da476aa4629e2506d4a857", persona: "deadpan, clever", appearance: "East Asian man early 30s, modern undercut hairstyle, light skin, black bomber jacket, cool composed" },
 ];
 
 interface ClipSpec {
   topic: string;
-  pair: [string, string]; // [gemini host key, elevenlabs host key]
+  pair: [string, string]; // [first host key, second host key]
   captions: CaptionStyle;
   turns: number;
 }
@@ -76,13 +70,13 @@ function rosterStillPath(key: string): string {
   return join(ROSTER_DIR, `${key}.png`);
 }
 
-async function buildRoster(gemini: GeminiClient): Promise<void> {
+async function buildRoster(codex: CodexClient): Promise<void> {
   await mkdir(ROSTER_DIR, { recursive: true });
   for (const h of ROSTER) {
     const out = rosterStillPath(h.key);
     if (existsSync(out)) continue;
     console.log(`  roster still → ${h.name}`);
-    await gemini.generateImageToFile({
+    await codex.generateImageToFile({
       model: MODELS.imageModel,
       prompt:
         `${h.appearance}, sitting at a microphone in a modern podcast studio with dark charcoal acoustic ` +
@@ -138,12 +132,10 @@ async function main(): Promise<void> {
   const RECOMPOSE = args.includes("recompose");
   const numArg = args.find((a) => /^\d+$/.test(a));
   const count = numArg ? Number.parseInt(numArg, 10) : CLIPS.length;
-  const env = resolveEnv(ROOT);
-  if (!env.geminiApiKey) throw new Error("GEMINI_API_KEY required");
-  const gemini = new GeminiClient({ apiKey: env.geminiApiKey });
+  const codex = new CodexClient();
 
   console.log(`\npodframes showcase — roster of ${ROSTER.length} hosts, ${Math.min(count, CLIPS.length)} clips\n`);
-  await buildRoster(gemini);
+  await buildRoster(codex);
 
   const byKey = new Map(ROSTER.map((h) => [h.key, h]));
   const done: string[] = [];
@@ -165,11 +157,6 @@ async function main(): Promise<void> {
       options: {
         videoProvider: "fal-ltx",
         captionStyle: clip.captions,
-        // The official reel SHOWS the mix: provider speaker tags + branding on —
-        // shares should attribute back to podframes/Speechbase.
-        branding: true,
-        titleCard: false,
-        showSpeakerTags: true,
         videoResolution: "720p",
         renderQuality: "high",
         maxCues: 2,

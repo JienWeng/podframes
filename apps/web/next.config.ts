@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   // Compile the workspace core package (TS source) for the server.
   transpilePackages: ["@podframes/core"],
   // Keep heavy, node-only deps external so Next doesn't bundle them.
-  serverExternalPackages: ["hyperframes", "@google/genai", "@speech-sdk/core", "sharp", "dotenv"],
+  serverExternalPackages: ["hyperframes", "sharp", "dotenv"],
   // @podframes/core is TS source using `.js` import specifiers (NodeNext style).
   // Map `.js` → `.ts` so the bundler resolves them when transpiling the package.
   webpack: (config) => {

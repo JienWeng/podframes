@@ -14,7 +14,7 @@ export function PatchBay() {
         viewBox="0 0 760 440"
         className="w-full h-auto"
         role="img"
-        aria-label="Two TTS providers routed into one conversation, then rendered to video"
+        aria-label="Two Fish Audio voices routed into one conversation, then rendered to video"
         style={{ fontFamily: "var(--font-sans)" }}
       >
         <defs>
@@ -39,14 +39,14 @@ export function PatchBay() {
           </filter>
         </defs>
 
-        {/* Channel A — left. The REAL shipped default cast (Ada on Google), not a
+        {/* Channel A — left. The default cast (Ada on Fish Audio), not a
             fictional channel — the hero must show a mix you can actually run. */}
         <g>
           <rect x="20" y="60" width="210" height="86" fill="#181715" stroke="#2f2b27" />
           <circle cx="58" cy="103" r="18" fill="#5B8CFF" opacity="0.18" />
           <circle cx="58" cy="103" r="8" fill="#5B8CFF" />
           <text x="86" y="98" fill="#F4F2EC" fontSize="20" fontWeight="700">Ada</text>
-          <text x="86" y="122" fill="#A8A298" fontSize="13" style={{ fontFamily: "var(--font-mono)" }}>google/gemini-3.1-flash-tts</text>
+          <text x="86" y="122" fill="#A8A298" fontSize="13" style={{ fontFamily: "var(--font-mono)" }}>fish/s2.1-pro</text>
         </g>
 
         {/* Channel B — right */}
@@ -55,7 +55,7 @@ export function PatchBay() {
           <circle cx="568" cy="103" r="18" fill="#A78BFA" opacity="0.18" />
           <circle cx="568" cy="103" r="8" fill="#A78BFA" />
           <text x="596" y="98" fill="#F4F2EC" fontSize="20" fontWeight="700">Theo</text>
-          <text x="596" y="122" fill="#A8A298" fontSize="13" style={{ fontFamily: "var(--font-mono)" }}>elevenlabs/eleven_v3</text>
+          <text x="596" y="122" fill="#A8A298" fontSize="13" style={{ fontFamily: "var(--font-mono)" }}>fish/s2.1-pro</text>
         </g>
 
         {/* Cables into the bus */}

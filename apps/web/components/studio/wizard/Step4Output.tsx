@@ -24,18 +24,18 @@ export function Step4Output() {
 
   return (
     <div>
-      <StepHeader title={done ? "Your video is ready" : "Render the video"} hint={done ? "Watch it in the preview. Re-render anytime, or export the pieces." : "Composites your generated clips with captions and b-roll, then renders the final MP4. (Nothing gets animated here — that happens in the Videos step.)"} />
+      <StepHeader title={done ? "Your video is ready" : "Export"} hint={done ? "Review your finished video, then download the video, audio, or captions." : "Combine your clips, supporting visuals, and captions into a finished MP4."} />
 
       <div className="mb-4 space-y-1.5">
         <div className="flex items-center justify-between border border-[var(--color-hairline)] px-3 py-2">
           <span>
-            <span className="block text-[13px] font-medium">Render quality</span>
-            <span className="block text-[11px] text-[var(--color-text-muted)]">draft is ~2× faster — switch to high for the final export</span>
+            <span className="block text-[13px] font-medium">Export quality</span>
+            <span className="block text-[11px] text-[var(--color-text-muted)]">Draft is faster. High is best for the finished video.</span>
           </span>
           <div className="flex gap-1">
             {(["draft", "high"] as const).map((q) => (
               <button
-                key={q}
+                key={q === "draft" ? "Draft" : "High"}
                 onClick={() => quality !== q && void ctx.patch({ options: { renderQuality: q } })}
                 disabled={disabled}
                 className="mono border px-2 py-0.5 text-[10px] disabled:opacity-50"
@@ -44,7 +44,7 @@ export function Step4Output() {
                   color: quality === q ? "var(--color-accent)" : "var(--color-text-muted)",
                 }}
               >
-                {q}
+                {q === "draft" ? "Draft" : "High"}
               </button>
             ))}
           </div>
@@ -53,25 +53,25 @@ export function Step4Output() {
 
       {!done ? (
         <button onClick={render} disabled={disabled} className="btn btn-primary w-full py-3 text-sm disabled:opacity-50">
-          {running ? "Rendering…" : "Render the video"}
+          {running ? "Rendering…" : "Export video"}
         </button>
       ) : (
         <>
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <button onClick={() => project?.videoUrl && downloadHref(`${slug}.mp4`, project.videoUrl)} className="btn btn-primary px-4 py-2 text-sm">↓ MP4</button>
-            {project?.audioUrl && <button onClick={() => downloadHref(`${slug}.${audioExt}`, project.audioUrl!)} className="btn btn-ghost px-3 py-2 text-sm">↓ audio</button>}
-            {regions.length > 0 && <button onClick={() => downloadText(`${slug}.srt`, toSrt(regions))} className="btn btn-ghost px-3 py-2 text-sm">↓ SRT</button>}
-            {regions.length > 0 && <button onClick={() => downloadText(`${slug}.vtt`, toVtt(regions), "text/vtt")} className="btn btn-ghost px-3 py-2 text-sm">↓ VTT</button>}
+            <button onClick={() => project?.videoUrl && downloadHref(`${slug}.mp4`, project.videoUrl)} className="btn btn-primary px-4 py-2 text-sm">Download MP4</button>
+            {project?.audioUrl && <button onClick={() => downloadHref(`${slug}.${audioExt}`, project.audioUrl!)} className="btn btn-ghost px-3 py-2 text-sm">Audio</button>}
+            {regions.length > 0 && <button onClick={() => downloadText(`${slug}.srt`, toSrt(regions))} className="btn btn-ghost px-3 py-2 text-sm">Captions (.srt)</button>}
+            {regions.length > 0 && <button onClick={() => downloadText(`${slug}.vtt`, toVtt(regions), "text/vtt")} className="btn btn-ghost px-3 py-2 text-sm">Captions (.vtt)</button>}
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={reRender} disabled={disabled} className="mono text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] disabled:opacity-40">↻ re-render</button>
+            <button onClick={reRender} disabled={disabled} className="mono text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] disabled:opacity-40">Export again</button>
             {quality === "draft" && <span className="mono text-[10px] text-[var(--color-warn)]">rendered in draft quality</span>}
           </div>
         </>
       )}
 
       <StepFooter>
-        <a href="/studio?new=1" className="mono text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text)]">+ new video</a>
+        <a href="/studio?new=1" className="mono text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text)]">+ New video</a>
       </StepFooter>
     </div>
   );

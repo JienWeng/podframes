@@ -1,5 +1,5 @@
 /**
- * Generate the repo's brand assets with Nano Banana 2 (one-off, committed):
+ * Generate the repo's brand assets with Codex image generation (one-off, committed):
  *
  *   .github/assets/banner.png   — README hero (16:9)
  *   .github/assets/social.png   — GitHub social preview (2:1 crop of the banner;
@@ -15,7 +15,7 @@
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
-import { GeminiClient, resolveEnv } from "@podframes/core";
+import { CodexClient } from "@podframes/core";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
@@ -23,9 +23,7 @@ const only = process.argv.includes("--only")
   ? new Set(process.argv[process.argv.indexOf("--only") + 1]!.split(","))
   : null;
 
-const env = resolveEnv(root);
-if (!env.geminiApiKey) throw new Error("GEMINI_API_KEY missing (.env.local)");
-const gemini = new GeminiClient({ apiKey: env.geminiApiKey });
+const codex = new CodexClient();
 
 const BRAND_LOOK =
   "Color palette: deep warm stone-charcoal background (#100F0E, warm near-black — NEVER cool blue-black), " +
@@ -75,8 +73,8 @@ for (const a of ASSETS) {
   if (only && !only.has(a.key)) continue;
   const outPath = resolve(root, a.out);
   console.log(`→ ${a.key} (${a.aspect}, ${a.size}) → ${a.out}`);
-  await gemini.generateImageToFile({
-    model: "gemini-3.1-flash-image",
+  await codex.generateImageToFile({
+    model: "codex-image",
     prompt: a.prompt,
     aspectRatio: a.aspect,
     imageSize: a.size,

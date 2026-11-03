@@ -11,6 +11,7 @@ interface GenerateBody {
   only?: StageName[];
   force?: boolean;
   onlyTurns?: number[];
+  acknowledgeInterrupted?: boolean;
 }
 
 /**
@@ -36,7 +37,8 @@ export async function POST(req: Request) {
     to: body.to,
     only: body.only,
     force: body.force,
-    onlyTurns: Array.isArray(body.onlyTurns) ? body.onlyTurns.filter((n) => Number.isInteger(n)) : undefined,
+    onlyTurns: body.onlyTurns,
+    acknowledgeInterrupted: body.acknowledgeInterrupted,
   });
   if (!result.ok) return new Response(result.message ?? "could not start run", { status: result.status });
   return Response.json({ slug: safeSlug(body.slug), started: true }, { status: 202 });

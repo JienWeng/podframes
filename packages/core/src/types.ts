@@ -53,12 +53,12 @@ export interface Host {
   appearance?: string;
   /** Built-in avatar key, when the host was chosen from the web roster. */
   avatarKey?: string;
-  /** Provider-specific TTS tuning passed through Speechbase (e.g. ElevenLabs voice_settings). */
+  /** Fish Audio synthesis options; older projects may retain legacy settings. */
   providerOptions?: Record<string, unknown>;
   /** Default ElevenLabs voice stability (0..1) for this host. Lower = more expressive/variable, higher = more consistent. */
   defaultStability?: number;
   /**
-   * Free-text voice direction (Gemini's natural-language style). Emitted as an audio
+   * Free-text voice direction. Emitted as an audio
    * tag `[...]` so the model interprets it instead of speaking it.
    */
   defaultStyle?: string;
@@ -78,6 +78,12 @@ export interface ConversationConfig {
   styleNote?: string;
   /** Approx number of back-and-forth turns the script should aim for. */
   targetTurns?: number;
+  /** Approximate episode length; takes precedence over targetTurns when generating a script. */
+  targetDurationSec?: number;
+  /** Add sparse Fish Audio delivery cues when generating a script (default true). */
+  autoEmotionTags?: boolean;
+  /** Public source articles to open and verify during live script research. */
+  sourceUrls?: string[];
   /** Cap each turn's length (words). Low values (~12-16) make punchy short clips. */
   maxWordsPerTurn?: number;
   hosts: [Host, Host];
@@ -95,14 +101,16 @@ export interface PipelineOptions {
    * - `fal-ltx`: fal LTX-2.3 audio-to-video — same per-turn shape, higher-quality
    *   alternative with more natural variety.
    */
-  videoProvider: "fal-ltx" | "replicate-p-video";
-  /** Gemini text model for script writing. */
+  videoProvider: "fal-ltx" | "replicate-p-video" | "heygen";
+  /** Explicit billing source for HeyGen CLI. */
+  heygenAuth: "subscription" | "api";
+  /** Writing route: codex-local, claude-code/model, openai/model, or anthropic/model. */
   scriptModel: string;
-  /** Gemini text model for cheap structured cue analysis. */
+  /** Writing route for supporting-visual planning. */
   cueModel: string;
-  /** Gemini image model for host stills (Nano Banana 2 — face quality matters here). */
+  /** Built-in Codex image generation for host stills. */
   imageModel: string;
-  /** Gemini image model for b-roll images (Nano Banana 2 Lite — fast + cheap, ~$0.034/image). */
+  /** Built-in Codex image generation for b-roll. */
   brollImageModel: string;
   /** fal audio-to-video model id. */
   falVideoModel: string;
@@ -151,9 +159,12 @@ export interface Script {
   /** One-line hook used for the title card. */
   hook: string;
   turns: ScriptTurn[];
+  /** Sources opened during research; an unknown publication date is an empty string. */
+  sources?: Array<{ title: string; url: string; publishedAt: string }>;
+  researchedAt?: string;
 }
 
-/** Word-level alignment, seconds. Mirrors @speech-sdk/core WordTimestamp. */
+/** Measured word-level alignment, seconds. */
 export interface WordTs {
   text: string;
   start: number;
@@ -303,6 +314,11 @@ export interface ProjectState {
   stills?: AvatarImagesArtifact;
   clips?: ClipLibrary;
   broll?: BrollPlan;
+  /** Reusable imagery copied from a show template, with fresh timing per episode. */
+  brollLibrary?: Array<{ id: string; title: string; description: string; imagePath: string }>;
+  templateSource?: string;
+  /** Series membership is independent of the copied template assets. */
+  seriesId?: string;
   composition?: CompositionArtifact;
   output?: OutputArtifact;
 

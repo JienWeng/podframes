@@ -1,3 +1,4 @@
+import { audioToVideo as audioToVideoHeygen } from "../clients/heygen";
 import { audioToVideo as audioToVideoFal } from "../clients/fal";
 import { audioToVideo as audioToVideoReplicate } from "../clients/replicate";
 import { probeDuration } from "../util/audio";
@@ -19,10 +20,11 @@ const NEGATIVE =
 
 export async function runVideo(ctx: StageContext): Promise<void> {
   const provider = ctx.project.state.options.videoProvider;
+  if (provider === "heygen") return runVideoHeygen(ctx);
   if (provider === "fal-ltx") return runVideoFal(ctx);
   if (provider === "replicate-p-video") return runVideoReplicate(ctx);
   throw new Error(
-    `unknown videoProvider "${provider as string}" — supported: fal-ltx, replicate-p-video`,
+    `unknown videoProvider "${provider as string}" — supported: heygen, fal-ltx, replicate-p-video`,
   );
 }
 
@@ -42,7 +44,7 @@ function talkingHeadPrompt(h: Host): string {
   );
 }
 
-type PerTurnProvider = "fal-ltx" | "replicate-p-video";
+type PerTurnProvider = "fal-ltx" | "replicate-p-video" | "heygen";
 
 type AnimateUnit = (args: {
   imagePath: string;
@@ -120,7 +122,7 @@ async function runPerTurnVideo(ctx: StageContext, provider: PerTurnProvider, ani
   if (targetSet && work.length === 0) throw new Error("onlyTurns matched no turns in this script");
 
   const concurrency = Math.max(1, Math.min(options.videoConcurrency ?? 4, Math.max(1, work.length)));
-  const modelId = provider === "fal-ltx" ? options.falVideoModel : options.replicateVideoModel;
+  const modelId = provider === "heygen" ? "HeyGen" : provider === "fal-ltx" ? options.falVideoModel : options.replicateVideoModel;
   log.info(
     `animating ${work.length} of ${units.length} clips (${speech.turns.length} turns) with ${modelId} · ${genW}x${genH} · up to ${concurrency} in parallel (lip-synced)`,
   );
@@ -308,6 +310,20 @@ async function runVideoReplicate(ctx: StageContext): Promise<void> {
       seed,
       outputPath,
       onLog: () => {},
+    });
+  });
+}
+
+async function runVideoHeygen(ctx: StageContext): Promise<void> {
+  const { options, config } = ctx.project.state;
+  await runPerTurnVideo(ctx, "heygen", async ({ imagePath, audioPath, prompt, outputPath }) => {
+    await audioToVideoHeygen({
+      auth: options.heygenAuth ?? "subscription",
+      apiKey: ctx.env.heygenApiKey,
+      imagePath, audioPath, prompt, outputPath,
+      aspectRatio: config.aspectRatio ?? "16:9",
+      resolution: options.videoResolution,
+      signal: ctx.signal,
     });
   });
 }

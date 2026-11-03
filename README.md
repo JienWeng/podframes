@@ -1,220 +1,154 @@
-<div align="center">
+# Podframes
 
-<img src=".github/assets/banner.png" alt="podframes — turn a topic into a podcast you can watch" width="100%" />
+Turn a topic into a two-host podcast video: local Codex writes the script and generates images, Fish Audio supplies voices using website credits, local Whisper supplies word timestamps, and HyperFrames renders the finished MP4.
 
-<br/>
-<br/>
+The existing Podframes studio flow and visual design stay intact. Choose **P-Video Avatar**, **LTX-2.3**, or **HeyGen** for per-turn lip-sync.
 
-**One line of input → a two‑host AI podcast video: mixed voices, lip‑synced avatars, word‑timed captions.**
+## Setup
 
-[![CI](https://github.com/Jellypod-Inc/podframes/actions/workflows/ci.yml/badge.svg)](https://github.com/Jellypod-Inc/podframes/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-22D3EE)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%E2%89%A5%2022-5B8CFF)](package.json)
-[![Powered by Speechbase](https://img.shields.io/badge/powered%20by-Speechbase-A78BFA)](https://speechbase.ai)
+Requires Node 22+, pnpm, ffmpeg/ffprobe, the local Codex CLI, and whisper.cpp with a multilingual model.
 
-</div>
-
-<div align="center">
-
-<a href="https://youtu.be/YP75ParZdqQ">
-  <img src=".github/assets/launch-thumb.jpg" alt="Watch podframes turn a topic into a video podcast with talking AI avatars" width="76%" />
-</a>
-
-<sub>▶ <a href="https://youtu.be/YP75ParZdqQ"><b>Watch the 1-minute demo</b></a> — a topic in, a talking-avatar podcast out.</sub>
-
-</div>
-
----
-
-podframes writes a two‑host script with Gemini, mixes **different TTS providers into one
-conversation** with [Speechbase](https://speechbase.ai), **lip‑syncs each host to that real
-audio** with P‑Video by default, and renders a captioned MP4 with
-[HyperFrames](https://hyperframes.heygen.com).
-
-```
-  topic
-    │
-    ├─▶  ① script    Gemini 3.1 Pro       two-host dialogue, alternating turns
-    ├─▶  ② speech    Speechbase           mix any providers → one leveled conversation
-    │                                      + word-level alignment timestamps
-    ├─▶  ③ avatars   Nano Banana 2        one base avatar image per host
-    ├─▶  ④ animate   P-Video Avatar | LTX-2.3   per-turn lip-synced clips
-    ├─▶  ⑤ b-roll    Gemini + NB2 Lite    sparse cues from the aligned transcript
-    ├─▶  ⑥ compose   HyperFrames HTML     timed clips + audio + captions + b-roll
-    └─▶  ⑦ render    HyperFrames          → output.mp4
-```
-
-The star is **step ②**: each host can be a *different* TTS provider (Google + ElevenLabs +
-OpenAI + Cartesia + …), and Speechbase returns one stitched, volume‑leveled conversation **plus
-word‑level timestamps** — which flow straight into lip‑sync clips, karaoke captions, and b‑roll
-timing with zero glue. Step ④ then animates each turn against its *actual* audio, so the mouths
-match the words.
-
-## Quickstart
-
-Prerequisites: **Node ≥ 22**, **pnpm**, **ffmpeg** on PATH.
-
-```bash
-# 1 · install
+```sh
 pnpm install
+codex login
+codex mcp add fish-audio --url https://api.fish.audio/mcp
+codex mcp login fish-audio
+```
 
-# 2 · add keys
-cp .env.example .env.local
-#    SPEECHBASE_API_KEY=sk_...      https://speechbase.ai
-#    GEMINI_API_KEY=AIza...         https://aistudio.google.com/apikey  (paid key for image models)
-#    REPLICATE_API_KEY=...          https://replicate.com/account/api-tokens  (default video provider)
-#    (FAL_API_KEY only if you switch to --provider fal-ltx)
+Sign in to Codex with your ChatGPT account and to Fish Audio in the browser. Fish speech uses your **website credits**, including the free-plan allowance. `FISH_API_KEY` and developer API credit are not used.
 
-# 3 · preflight
+For measured caption timing, install local Whisper (macOS):
+
+```sh
+brew install whisper-cpp
+mkdir -p ~/.cache/podframes
+curl -fL https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin -o ~/.cache/podframes/ggml-base.bin
+```
+
+Other platforms can build [whisper.cpp](https://github.com/ggml-org/whisper.cpp). Set `WHISPER_MODEL` if your model is stored elsewhere.
+
+Choose a video provider. API credentials can go in the project root’s `.env.local` or `.env`:
+
+- `REPLICATE_API_KEY`: P-Video Avatar, the default.
+- `FAL_API_KEY`: LTX-2.3.
+- HeyGen subscription login or `HEYGEN_API_KEY`: HeyGen.
+
+```sh
 pnpm podframes doctor
+pnpm dev:web
+# Open http://localhost:3000/studio
+```
 
-# 4a · CLI
+Run this app locally on the machine with the Codex and HeyGen sessions. A remotely hosted server cannot access your computer's local sessions.
+
+## Pipeline
+
+For the complete first-episode walkthrough, recurring automation commands, script format, character/image reuse, and failure recovery, see the [podcast automation guide](docs/AUTOMATION.md).
+
+In Studio’s **Script** step, use **Generate full video** for a topic, or **Paste or import a script → Import & generate full video** for external dialogue. Both run through speech, avatars, lip-sync, B-roll, captions, and the final MP4 without stepping through each screen. The selected provider must already be authenticated; generation uses its credits. Completed stages are reused when you resume.
+
+Plain `.txt` is the simplest interchange format; `.md` accepts the same speaker-labelled dialogue, an optional `# Title`, and bold speaker labels. Use your cast names or `HOST_A` / `HOST_B`. Continuation lines belong to the preceding speaker. Fish delivery tags remain intact. Imports preserve wording and do not automatically fact-check claims.
+
+```text
+# Episode title
+HOST_A: [curious] What happened?
+HOST_B: Let’s walk through the evidence.
+```
+
+For local automation, save that text as `episode.md` and run from the repository root:
+
+```sh
+pnpm podframes generate --script episode.md --slug my-episode --provider heygen --heygen-auth subscription --language zh --aspect 9:16
+```
+
+Use your script’s language and desired provider. The final file is `projects/my-episode/output.mp4`. Re-run the same command to resume completed work; changing the imported dialogue invalidates downstream audio/video. `--only script` imports and validates without calling generation services.
+
+For recurring episodes, use `--template <existing-project-slug>`. It inherits the show's hosts, Fish voices, language, framing, video provider, and edit settings. Saved host portraits are copied exactly into the new episode, including generated characters. Existing B-roll images become a reusable library; the planner can select relevant images with fresh timing. Old dialogue, audio, and lip-sync clips are not copied. Source images are copied into independent files, so changing/deleting the template does not change the episode. The template must have both saved host portraits and its referenced image files. Use a different slug for every new episode.
+
+In the interface, open **Studio → Your videos → Use as template** on the source project's card. The new episode opens in **Cast & voice** with the copied faces and voices. Review them, proceed to **Script**, paste/import the new dialogue, and choose **Import & generate full video**. To choose a different individual face, click its portrait in **Cast & voice**. The source project is kept intact, and old episode reference links are not carried over.
+
+This sample uses your existing show and the included Mandarin script:
+
+```sh
+pnpm podframes generate --template what-makes-a-good-cold-open-episode --script examples/automation/episode.md --slug podcast-episode-002 --provider heygen --heygen-auth subscription --language zh
+```
+
+An external research/writing agent can save a new Markdown file and run that command locally, using a new episode slug each time. The result is `projects/podcast-episode-002/output.mp4`. The command runs one episode and exits; it does not install a schedule or folder watcher.
+
+1. **Script:** a fresh local `codex exec` task returns structured two-host dialogue.
+2. **Speech:** Fish Audio MCP synthesizes each turn using website credits. Local Whisper transcribes that exact audio for measured word timestamps. ffmpeg assembles the master audio and inter-turn pauses.
+3. **Avatars:** keep a roster face, upload a photo, or choose **Generate portrait** in the face picker. Generated portraits use Codex's built-in image tool.
+4. **Animation:** P-Video, LTX, or HeyGen animates each portrait against the turn's actual audio.
+5. **B-roll:** Codex chooses timed supporting visuals, stat cards, quotes, and lower-thirds. Use **Upload photo** on an image cue for real photography or screenshots (PNG/JPEG/WebP, up to 10 MB), or **Generate AI** for a candid documentary-style illustration. Uploads retain the cue's timing and camera motion; re-rendering reuses them. Re-suggesting replaces the cue list, including uploaded photos. This stage does not generate video footage.
+6. **Compose/render:** HyperFrames assembles the clips, audio, captions, and supporting visuals into MP4.
+
+Codex uses your existing ChatGPT login, with an isolated temporary workspace per request. API-key environment variables are removed from its subprocess environment. There is no automatic fallback to paid OpenAI API generation. Built-in image availability and subscription limits apply; unsupported sessions fail clearly.
+
+## Language
+
+Choose **Language** in **Cast & voice** before generating. English is the default; the picker includes Malay, Mandarin Chinese, Tamil, Indonesian, Japanese, Korean, Spanish, French, German, Hindi, Arabic, Thai, and Vietnamese. The selection is saved with the studio draft and used for new script dialogue, default voice-preview text, Fish speech, Whisper decoding, and b-roll labels. An existing script keeps its text until you click **rewrite**. Voice accent and delivery still depend on the chosen Fish voice.
+
+## Drafting, sources, length, and delivery
+
+The editable [scripting reference library](examples/script-library/README.md) supplies original conversational examples to topic drafting and **Auto-direct delivery**. It teaches rhythm, reactions, corrections, and restrained delivery through short reference excerpts; it does not train the model or replace current source checks. Edit the `zh-` examples for Mandarin. New requests read the current files automatically.
+
+The Script step checks live web sources before writing. It uses the current UTC date to distinguish recent updates from historical incidents, opens relevant reporting, and saves source links and publication dates with the draft. Paste up to five public HTTPS reference links to steer the research. Expand **Sources checked** to review the evidence. Completed live-search and page-retrieval events are required, and each cited URL must match a page actually opened. A response that skips research or cites an unopened link is rejected. Redirects to generic indexes or login pages are not treated as evidence for an article headline.
+
+Set **Target length (seconds)** from 15 to 600 seconds. This controls an approximate speech budget and turn count, rather than promising an exact final duration. Current audio length appears after synthesis.
+
+**Context-aware delivery cues** directs new dialogue using the whole exchange, each host's persona/default style, and the intent of individual lines. It uses short free-form Fish directions for pace, emphasis, and restrained reactions, including inline changes when useful. There is no fixed tag quota or required list of emotions, and each turn gets at most two cues. An explicit leading per-line cue overrides the host's default style.
+
+For an existing or imported script, click **Auto-direct delivery** in the Script step. This makes a Codex delivery-only proposal: spoken words, punctuation, numbers, speaker assignments, turn order, and source metadata are preserved. A result that changes the dialogue is rejected. Review the cues in the editor, adjust the new custom-delivery input if needed, then re-voice to hear them. The editor saves cue changes like other text edits; affected audio/video becomes stale, while new Fish generation starts only when requested. Direction suggestions alone do not synthesize speech. Audio quality still needs a listening check with the chosen voice.
+
+Codex uses `gpt-6.1-sol` by default. If it reports capacity before any speech-generation tool starts, the app tries `gpt-6-sol` once. It does not automatically repeat an uncertain Fish generation. Set `PODFRAMES_CODEX_MODEL` in the root `.env` or `.env.local` to use another model available to your Codex subscription, then restart the app.
+
+## Fish Audio voices
+
+The studio includes public reference voices from [Fish's quickstart](https://docs.fish.audio/developer-guide/getting-started/quickstart). Paste a different Fish voice reference ID in the cast editor to use your own voice. The default model is `fish/s2.1-pro`.
+
+Voice previews and full turns use the official [Fish MCP connection](https://docs.fish.audio/overview/mcp), authenticated through Codex OAuth. Each request checks website credit and text limits. The free plan currently limits a speech call to 500 UTF-8 bytes; Chinese characters usually use three bytes each. Advanced developer API tuning options are not supported in website-credit mode.
+
+Fish MCP transcription returns plain text without timestamps, so captions and segment timing are measured locally with Whisper. Missing or malformed timestamps fail the turn instead of fabricating timing. Generated audio URLs are cached per turn before download and alignment, so retries can reuse speech already bought. Uncertain MCP generation failures are not automatically retried, to avoid duplicate charges.
+
+The local speech subprocess exposes only Fish credit balance and speech generation tools. It approves the requested speech tool within that subprocess; it does not grant other Fish tools access or change global tool-approval preferences.
+
+## HeyGen subscription or API
+
+Install the [official HeyGen CLI](https://github.com/heygen-com/heygen-cli#install), then choose a billing source:
+
+```sh
+# Subscription credits: complete browser login yourself.
+heygen auth login --oauth
+heygen auth status
+
+# Or API credits: add HEYGEN_API_KEY to .env.local.
+```
+
+In the studio's **Generate videos** step, select **HeyGen**, then **Subscription** or **API credits**. API mode requires `HEYGEN_API_KEY`. Subscription mode removes the API key from the child environment and requires the CLI's stored OAuth credential. The app never changes your stored login. The CLI stores only one credential type; OAuth login replaces a stored API credential, and vice versa.
+
+Each image and audio segment is uploaded through `heygen asset create`. Remote video IDs are saved beside the clip, so interrupted generation resumes the same job. Explicit clip regeneration creates a fresh request. If a creation request has an unknown outcome for over 24 hours, the app requires reconciliation with `heygen video list` rather than risking a duplicate purchase.
+
+## CLI
+
+```sh
 pnpm podframes generate --topic "Why is the sky blue?" --turns 10
-
-# 4b · or the web studio (pick voices, watch it run live)
-pnpm dev:web        # → http://localhost:3000
+pnpm podframes generate --topic "AI agents" --only script,speech
+pnpm podframes generate --topic "Coffee" --provider fal-ltx
+pnpm podframes generate --topic "Coffee" --provider heygen --heygen-auth subscription
+pnpm podframes generate --topic "Coffee" --provider heygen --heygen-auth api
+pnpm podframes --help
 ```
 
-> **Install blocked by a release‑age guard?** If your global pnpm config sets `minimumReleaseAge`,
-> some of these fast‑moving SDKs are too new. See [`.npmrc`](.npmrc) for a surgical, per‑package
-> opt‑out for the trusted publishers (Google, Jellypod, HeyGen, Vercel).
+Projects remain under `projects/<slug>/`. Existing completed media is retained. For older Speechbase projects, choose Fish Audio and valid Fish reference IDs for both hosts before regenerating speech; old provider voice IDs are not interchangeable.
 
-### Try it cheap first
+## Development
 
-The studio is a linear wizard, and **Step 2 stops after the mixed conversation audio** — play the
-Speechbase mix and export word‑timed SRT/VTT captions before spending anything on video. Only the
-later steps touch image/video APIs, and the studio quotes a **cost estimate before every
-animation run**. The CLI equivalent is `--to speech`.
-
-## The studio
-
-<img src=".github/assets/wizard.gif" alt="One command in the terminal — or click through the studio wizard step by step" width="100%" />
-
-A five‑step wizard over the same pipeline the CLI runs, with the receipts visible:
-
-- **Live runs that survive anything** — generation runs server‑side; reload the tab, open a second
-  one, or come back later and the studio reattaches to the stream mid‑run. Stop is one click.
-- **Per‑line economics** — edit one line and only that line's audio + clip are re‑bought. Check
-  three clips and exactly three clips regenerate, with the dollar estimate on the button.
-- **Nothing is silently destroyed** — any edit that invalidates paid artifacts says exactly what
-  it cleared, and destructive switches confirm first with real counts.
-- **A preview that tells the truth** — the right pane plays your actual generated clips with the
-  same caption grouping the final render uses, on a provider‑colored timeline (the patch‑bay,
-  visible).
-- **8 caption styles that actually differ** — from `slam` (two huge words a beat) to `boxed`
-  (full subtitle line), each with its own phrase length and type scale.
-- **One avatar per host, voice separate** — pick a face from the roster or upload a photo; that
-  exact image is the first frame every clip animates from. Voices are chosen independently.
-
-<img src=".github/assets/studio.png" alt="The podframes studio — script editing with a live lip-synced preview" width="100%" />
-
-### Visual treatments
-
-The original composition remains the default, with two richer opt-in cuts that reuse the same
-voices, avatar clips, trims, captions, and B-roll assets:
-
-| Treatment | What changes | Cue rhythm |
-| --- | --- | --- |
-| **Minimal** | Original talking-host cut with compact supporting cards | ≈1–2/min |
-| **Editorial** | Designed cold open, alternating graphic zones, larger stat/B-roll cards | ≈4/min |
-| **Cinematic** | Full-frame visual takeovers, bold typography, dense story treatment | ≈6/min |
-
-Switching treatment invalidates only composition + render — it never re-buys speech or lip-sync
-video, so it restyles the beats you already have. To get a treatment's full cue density on an
-existing episode, re-suggest the beats afterwards (**Suggest beats** in the studio, or
-`--only broll --force` then `--from compose` in the CLI). Pick the treatment in
-**B-roll & captions**, or use `--treatment editorial|cinematic` in the CLI.
-
-## Video providers
-
-Both are **per‑turn audio‑to‑video with real lip‑sync** — each line becomes its own clip, driven
-by that turn's actual Speechbase audio. Pick with `--provider` (CLI) or one click in the studio.
-
-| Provider | id | Fidelity | Price | Notes |
-| --- | --- | --- | --- | --- |
-| **P‑Video Avatar** (Replicate) | `replicate-p-video` | good | ≈$0.025/s @720p · ≈$0.045/s @1080p | **Default.** Cheaper, faster |
-| **LTX‑2.3** (fal.ai) | `fal-ltx` | best | ≈$0.10/s | Higher-fidelity alternative. Static locked‑off shot, prompt expansion disabled |
-
-## Models
-
-Centralized in [`packages/core/src/config.ts`](packages/core/src/config.ts) — a model bump is one line.
-
-| Stage  | Model id (July 2026)             | Notes                                              |
-| ------ | -------------------------------- | -------------------------------------------------- |
-| script | `gemini-3.1-pro-preview`         | High‑quality dialogue                              |
-| cues   | `gemini-3.1-pro-preview`         | B‑roll/caption editorial judgment (same as script) |
-| avatars | `gemini-3.1-flash-image`        | **Nano Banana 2** — only for text‑described hosts (roster picks / uploads pass through) |
-| b‑roll | `gemini-3.1-flash-lite-image`    | **Nano Banana 2 Lite** — ≈4s/image, ≈$0.034/image  |
-| video  | `prunaai/p-video-avatar` (Replicate) | **Default.** Cheaper/faster per‑turn lip‑sync   |
-| video  | `fal-ai/ltx-2.3-quality/audio-to-video` | Alternative: LTX‑2.3, per‑turn audio‑to‑video, real lip‑sync |
-| speech | `provider/model` per turn        | via `@speech-sdk/core`, routed through Speechbase (add BYOK keys in your Speechbase account) |
-
-## Cost (rough, paid keys)
-
-Treat these as relative orders of magnitude, not quotes — providers reprice often.
-
-- **Speechbase** — by characters; a short episode is cents. Free tier covers demos.
-- **Images (Google's [price sheet](https://ai.google.dev/gemini-api/docs/pricing))** — roster
-  picks and uploaded photos cost nothing; a text‑described host generates one avatar on Nano
-  Banana 2 ($0.067 at 1K / $0.101 at 2K). B‑roll uses Nano Banana 2 Lite at ≈$0.034/image.
-  A handful per episode — dimes, not dollars.
-- **Video — the dominant cost.** Every spoken second is generated video, so it scales linearly
-  with episode duration: LTX‑2.3 is **≈$0.10/s** (a 90‑second episode ≈ $9); P‑Video is
-  **≈$0.02/s at 720p** (≈ $1.80). The studio shows this estimate before you click Generate.
-
-## Architecture
-
-A pnpm monorepo:
-
-```
-packages/core     @podframes/core — the typed, resumable pipeline engine
-apps/cli          podframes — headless CLI runner
-apps/web          @podframes/web — Next.js showcase + studio (server-side runs, SSE reattach)
-projects/<slug>/  per-run artifacts (script, audio, stills, clips, composition, output.mp4)
-design.md         brand truth for BOTH the web app and the rendered video
+```sh
+pnpm typecheck
+pnpm --filter @podframes/core test
+pnpm build:web
 ```
 
-Every run is **resumable at two levels**: stages skip themselves when their artifact exists, and
-the speech/video stages resume **per turn** — a transient failure on turn 9 of 10 re‑buys one
-turn, not ten. Resume from any point with `--from stills` (or `--force` to redo). State lives in
-`projects/<slug>/project.json`.
+Provider tests use mocked HTTP or local CLI fixtures and do not spend provider credits.
 
-### Scripting the engine
-
-podframes is a **local tool** — clone it, add keys, and drive it through the CLI or the studio.
-`@podframes/core` isn't published to npm and isn't going to be; if the CLI flags don't cover what
-you want, script the engine directly inside the repo (drop a file in `scripts/` and run it with
-`pnpm exec tsx`):
-
-```ts
-// scripts/my-episode.mts
-import { generate, DEFAULT_HOSTS } from "@podframes/core";
-
-await generate(
-  { topic: "The history of coffee", hosts: DEFAULT_HOSTS, aspectRatio: "16:9" },
-  { root: process.cwd(), onEvent: (e) => console.log(e.stage, e.message) },
-);
-```
-
-`scripts/showcase.mts` and `scripts/brand-assets.mts` are real examples of the same pattern.
-
-## Good to know
-
-- **The web app is a local tool**, not a deployable site: its API routes proxy *your* keys from
-  `.env.local` and it reads/writes `projects/` on *your* disk. There is no auth layer. Don't
-  deploy it publicly as‑is.
-- **HyperFrames downloads a headless Chrome** on first render — `pnpm podframes doctor` checks
-  everything (node, ffmpeg, keys) before you spend.
-- **Agent‑assisted development**: the skills used to build this repo are pinned in
-  [`skills-lock.json`](skills-lock.json) and fetched locally into `.agents/` (gitignored). House
-  rules live in [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Built with
-
-[Speechbase](https://speechbase.ai) · [`@speech-sdk/core`](https://github.com/Jellypod-Inc/speech-sdk) ·
-[Google Gemini](https://ai.google.dev) (Nano Banana 2 + Lite) · [fal.ai](https://fal.ai) (LTX‑2.3) ·
-[Replicate](https://replicate.com) (p‑video) · [HyperFrames](https://hyperframes.heygen.com) · Next.js
-
-## License
-
-[Apache‑2.0](LICENSE) © [Jellypod, Inc.](https://jellypod.ai)
+Apache-2.0. Based on [Jellypod's Podframes](https://github.com/Jellypod-Inc/podframes).

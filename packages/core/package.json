@@ -1,7 +1,7 @@
 {
   "name": "@podframes/core",
   "version": "0.1.0",
-  "description": "The podframes pipeline engine: topic → Speechbase conversation → Gemini stills/video → HyperFrames render.",
+  "description": "Two-host AI podcast videos with local Codex, Fish Audio, P-Video, LTX, HeyGen, and HyperFrames.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./src/index.ts",
@@ -19,6 +19,8 @@
       "types": "./src/compose/trim.ts",
       "default": "./src/compose/trim.ts"
     },
+    "./captions": "./src/compose/captions.ts",
+    "./script-import": "./src/script-import.ts",
     "./package.json": "./package.json"
   },
   "private": true,
@@ -31,13 +33,11 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/compose/builder.test.ts src/stages/turn-timing.test.ts src/stages/stills.test.ts src/project.test.ts",
+    "test": "tsx --test src/compose/*.test.ts src/stages/*.test.ts src/*.test.ts src/clients/*.test.ts",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
     "@fal-ai/client": "^1.10.0",
-    "@google/genai": "^2.8.0",
-    "@speech-sdk/core": "^0.16.0",
     "dotenv": "^16.4.7",
     "hyperframes": "^0.6.110",
     "replicate": "^1.4.0"

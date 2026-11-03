@@ -17,6 +17,7 @@ export interface RunBody {
   force?: boolean;
   /** Animate only these turn indices in the video stage. */
   onlyTurns?: number[];
+  acknowledgeInterrupted?: boolean;
 }
 
 /**
@@ -63,7 +64,9 @@ export function useRun() {
           } catch {
             return;
           }
-          if (obj.type === "event" && obj.event) {
+          if (obj.type === "start" && obj.message) {
+            setLog((prev) => [...prev, { stage: "pipeline", level: "info", message: obj.message!, at: obj.at }]);
+          } else if (obj.type === "event" && obj.event) {
             setLog((prev) => [...prev.slice(-300), obj.event!]);
           } else if (obj.type === "done") {
             finish(obj.done ?? null);
@@ -87,11 +90,17 @@ export function useRun() {
   const start = useCallback(
     async (body: RunBody): Promise<DonePayload | null> => {
       setError(null);
-      const res = await fetch("/api/generate", {
+      let res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      if (res.status === 409) {
+        const message = await res.clone().text();
+        if (message.includes("acknowledgeInterrupted=true") && window.confirm("The previous worker stopped during generation. A paid request may have completed remotely. Have you checked provider jobs and credits and want to retry?")) {
+          res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, acknowledgeInterrupted: true }) });
+        }
+      }
       if (!res.ok) {
         setError((await res.text().catch(() => "")) || `run failed to start (${res.status})`);
         return null;

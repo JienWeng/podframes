@@ -11,7 +11,7 @@ export const STEPS = [
   { n: 2, label: "Script" },
   { n: 3, label: "Videos" },
   { n: 4, label: "B-roll & captions" },
-  { n: 5, label: "Output" },
+  { n: 5, label: "Export" },
 ] as const;
 
 export interface GenerateOpts {
@@ -48,6 +48,14 @@ export interface WizardCtx {
   setTopic: (s: string) => void;
   style: string;
   setStyle: (s: string) => void;
+  language: string;
+  setLanguage: (language: string) => void;
+  targetDurationSec: number;
+  setTargetDurationSec: (seconds: number) => void;
+  autoEmotionTags: boolean;
+  setAutoEmotionTags: (enabled: boolean) => void;
+  sourceLinks: string;
+  setSourceLinks: (links: string) => void;
   aspect: Aspect;
   setAspect: (a: Aspect) => void;
   resolution: "720p" | "1080p";
@@ -69,7 +77,7 @@ export interface WizardCtx {
   confirm: (opts: ConfirmOptions) => Promise<boolean>;
   /** Edit config/hosts/script/cues/options (invalidates downstream stages server-side), then refetch.
    *  `silent` skips the global busy flag — for background autosaves that must not disable the editor. */
-  patch: (body: PatchBody, opts?: { silent?: boolean }) => Promise<void>;
+  patch: (body: PatchBody, opts?: { silent?: boolean }) => Promise<boolean>;
   refresh: () => Promise<void>;
   /** Lazily create the project (from the current cast/topic) if none exists; returns the slug. */
   ensureProject: () => Promise<string | null>;

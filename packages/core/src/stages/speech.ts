@@ -1,7 +1,6 @@
-import { synthesizeTurn, extForMediaType } from "../clients/speechbase";
+import { synthesizeTurn, extForMediaType } from "../clients/fish";
 import { clearStages, clearTurnClips } from "../editing";
 import { fileExists, readJson, writeBytes, writeJson, remove, ensureDir } from "../util/fs";
-import { retry } from "../util/retry";
 import { probeDuration, normalizeTimestamps, padAudioTail, concatAudio, sliceAudio } from "../util/audio";
 import { providerOf } from "../types";
 import { compilePerformance, isAudioTagWord } from "../performance";
@@ -9,7 +8,7 @@ import { buildTurnRegions, planSegmentBoundaries, type SynthesizedTurn, type Tur
 import type { StageContext } from "./context";
 import type { SpeechArtifact, ScriptTurn } from "../types";
 
-const SYNTH_CONCURRENCY = 6;
+const SYNTH_CONCURRENCY = 2;
 /** Keep each LTX clip under the ~20s cap; long turns split into multiple segments. */
 const MAX_SEGMENT_SEC = 18;
 
@@ -22,6 +21,7 @@ interface TurnSidecar {
   model: string;
   voice: string;
   text: string;
+  language?: string;
   /** The pause baked into this turn's last segment (options.gapMs at synth time). */
   gapMs: number;
   segments: TurnSegment[];
@@ -34,7 +34,7 @@ interface TurnSidecar {
  * derived master for playback/compose. No master-slicing — see ./turn-timing.ts.
  */
 export async function runSpeech(ctx: StageContext): Promise<void> {
-  const { project, env, reporter, signal } = ctx;
+  const { project, reporter, signal } = ctx;
   const log = reporter.stage("speech");
   const { config, options, script } = project.state;
 
@@ -45,21 +45,14 @@ export async function runSpeech(ctx: StageContext): Promise<void> {
     return;
   }
 
-  // All TTS routes through the Speechbase gateway — BYOK provider keys live in
-  // your Speechbase account, not in this repo.
-  if (!env.speechbaseApiKey) {
-    throw new Error("SPEECHBASE_API_KEY is required (set it in .env.local — get one at speechbase.ai)");
-  }
-
   const hostById = new Map(config.hosts.map((h) => [h.id, h]));
   const providers = [...new Set(config.hosts.map((h) => providerOf(h)))];
-  const apiKey = env.speechbaseApiKey;
   const gapSec = (options.gapMs ?? 320) / 1000;
   const scriptTurns = script.turns;
   const lastIndex = Math.max(...scriptTurns.map((t) => t.index));
 
   log.info(
-    `synthesizing ${scriptTurns.length} standalone turns via Speechbase · providers: ${providers.join(", ")}`,
+    `synthesizing ${scriptTurns.length} standalone turns via Fish website credits · providers: ${providers.join(", ")}`,
   );
   await ensureDir(project.path("audio"));
 
@@ -79,6 +72,7 @@ export async function runSpeech(ctx: StageContext): Promise<void> {
       side.model !== host.model ||
       side.voice !== host.voice ||
       side.text !== t.text ||
+      (side.language ?? "en") !== (config.language ?? "en") ||
       side.gapMs !== (options.gapMs ?? 320) ||
       !side.segments.length ||
       !side.segments.every((s) => fileExists(project.abs(s.audioPath)))
@@ -102,17 +96,15 @@ export async function runSpeech(ctx: StageContext): Promise<void> {
     const host = hostById.get(t.hostId)!;
     const { text, providerOptions } = compilePerformance(host, t);
     const opts = providerOptions ?? host.providerOptions;
-    const out = await retry(
-      () =>
-        synthesizeTurn({
-          model: host.model,
-          voice: host.voice,
-          text,
-          ...(opts ? { providerOptions: opts } : {}),
-          ...(apiKey ? { apiKey } : {}),
-        }),
-      { onRetry: (err, n) => log.warn(`turn ${t.index} synth failed (attempt ${n}) — retrying: ${err instanceof Error ? err.message : String(err)}`) },
-    );
+    const out = await synthesizeTurn({
+      signal,
+      model: host.model,
+      voice: host.voice,
+      text,
+      language: config.language ?? "en",
+      cachePath: project.path("audio", `turn-${t.index}.fish-mcp.json`),
+      ...(opts ? { providerOptions: opts } : {}),
+    });
 
     const rawPath = project.path("audio", `turn-${t.index}.raw.${extForMediaType(out.mediaType)}`);
     const temps = [rawPath];
@@ -157,6 +149,7 @@ export async function runSpeech(ctx: StageContext): Promise<void> {
         model: host.model,
         voice: host.voice,
         text: t.text,
+        language: config.language ?? "en",
         gapMs: options.gapMs ?? 320,
         segments,
         words,
@@ -183,7 +176,9 @@ export async function runSpeech(ctx: StageContext): Promise<void> {
       }
     }
   }
-  await Promise.all(Array.from({ length: Math.min(SYNTH_CONCURRENCY, scriptTurns.length) }, () => worker()));
+  const results = await Promise.allSettled(Array.from({ length: Math.min(SYNTH_CONCURRENCY, scriptTurns.length) }, () => worker()));
+  const rejected = results.find((result) => result.status === "rejected");
+  if (rejected) throw rejected.reason;
   if (signal?.aborted) throw new Error("run cancelled");
 
   // Place turns on the absolute timeline (cumulative offsets — pure + tested).

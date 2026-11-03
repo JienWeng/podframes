@@ -1,4 +1,5 @@
-import { resolveEnv } from "@podframes/core";
+import { resolveEnv, claudeStatus, codexStatus, fishStatus, whisperStatus, workerOnline } from "@podframes/core";
+import { heygenStatus } from "@podframes/core";
 import { exec } from "node:child_process";
 import { findRepoRoot } from "@/lib/root";
 
@@ -12,8 +13,15 @@ export async function GET() {
     exec("ffmpeg -version", (err) => resolve(!err));
   });
   return Response.json({
-    speechbase: !!env.speechbaseApiKey,
-    gemini: !!env.geminiApiKey,
+    fish: await fishStatus(),
+    whisper: await whisperStatus(),
+    codex: await codexStatus(),
+    claude: await claudeStatus(),
+    openai: !!process.env.OPENAI_API_KEY,
+    anthropic: !!process.env.ANTHROPIC_API_KEY,
+    automation: (process.env.PODFRAMES_API_TOKEN?.length ?? 0) >= 32,
+    worker: workerOnline(findRepoRoot()),
+    heygen: await heygenStatus("subscription"),
     fal: !!env.falApiKey,
     replicate: !!env.replicateApiKey,
     ffmpeg,

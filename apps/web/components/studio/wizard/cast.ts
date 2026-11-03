@@ -61,11 +61,17 @@ export function configFrom(
   style: string,
   aspect: Aspect,
   resolution: "720p" | "1080p" = "720p",
+  language = "en",
+  settings: { targetDurationSec?: number; autoEmotionTags?: boolean; sourceUrls?: string[] } = {},
 ): CreateConfig {
   return {
     topic: topic.trim(),
-    styleNote: style.trim() || "snappy and punchy — a fun, fast back-and-forth",
-    maxWordsPerTurn: 16,
+    language,
+    targetDurationSec: settings.targetDurationSec ?? 90,
+    autoEmotionTags: settings.autoEmotionTags ?? true,
+    sourceUrls: settings.sourceUrls ?? [],
+    styleNote: style.trim() || "natural, conversational, and lightly playful",
+    maxWordsPerTurn: 28,
     aspectRatio: aspect,
     hosts: castToHosts(cast),
     options: { captionStyle: "clean", videoResolution: resolution },
@@ -74,6 +80,10 @@ export function configFrom(
 
 export type CreateConfig = {
   topic: string;
+  language: string;
+  targetDurationSec: number;
+  autoEmotionTags: boolean;
+  sourceUrls: string[];
   styleNote: string;
   maxWordsPerTurn: number;
   aspectRatio: Aspect;

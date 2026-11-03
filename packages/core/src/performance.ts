@@ -1,16 +1,7 @@
 import { providerOf } from "./types";
 import type { Host, ScriptTurn } from "./types";
 
-/**
- * Performance direction → provider-native encoding.
- *
- * Tone, emphasis, and reactions are authored as inline `[tag]` audio tags written
- * straight into the script text (e.g. "[excited] That's the point." / "[laughs]").
- * Both models we support read these natively (verified: neither ElevenLabs v3 nor
- * Gemini 3.1 vocalizes them), and @speech-sdk/core routes tags per-provider. The
- * only host-level direction is the Gemini free-text style; ElevenLabs additionally
- * honors `voice_settings.stability`. There is no managed delivery/reaction field.
- */
+/** Inline audio directions pass through to Fish; legacy stability metadata remains readable. */
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -18,8 +9,8 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 export const DEFAULT_STABILITY = 0.5;
 
 /**
- * Compile a turn into the text + providerOptions sent to Speechbase. The text is
- * returned untouched unless the host has a Gemini style direction; stability is
+ * Compile a turn into the text + providerOptions sent to speech synthesis. The text is
+ * returned untouched unless the host has a style direction; stability is
  * applied for ElevenLabs hosts. Inline tags the author wrote into the text pass
  * straight through.
  */
@@ -29,9 +20,10 @@ export function compilePerformance(
 ): { text: string; providerOptions?: Record<string, unknown> } {
   const perf = turn.performance;
   const stability = perf?.stability ?? host.defaultStability ?? DEFAULT_STABILITY;
-  // The only host-level tag is Gemini's free-text style direction (interpreted by
+  // The only host-level tag is host's free-text style direction (interpreted by
   // the model, NOT spoken). Per-line tone/reactions live in the script text itself.
-  const tag = host.defaultStyle?.trim() ? `[${host.defaultStyle.trim().replace(/[[\]]/g, "")}]` : undefined;
+  const lineHasCue = providerOf(host) === "fish" && /^\[[^\]]+\]/.test(turn.text.trim());
+  const tag = !lineHasCue && host.defaultStyle?.trim() ? `[${host.defaultStyle.trim().replace(/[[\]]/g, "")}]` : undefined;
   const body = turn.text.trim();
   const compiled = [tag, body].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
   const hasTag = !!tag;

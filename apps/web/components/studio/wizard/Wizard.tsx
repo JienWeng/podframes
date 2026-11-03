@@ -20,6 +20,7 @@ import { Step2Script } from "./Step2Script";
 import { Step3Videos } from "./Step3Videos";
 import { Step3Look } from "./Step3Look";
 import { Step4Output } from "./Step4Output";
+import { StudioSidebar } from "./StudioSidebar";
 import { Preview } from "./Preview";
 import { clearStudioDraft, readStudioDraft, writeStudioDraft } from "./draft-storage";
 
@@ -42,8 +43,11 @@ function hostsKey(hosts: Array<ProjectDetail["config"]["hosts"][number]>): strin
 }
 
 const HEALTH_LABELS: Record<string, string> = {
-  speechbase: "SPEECHBASE_API_KEY — the mixed conversation audio",
-  gemini: "GEMINI_API_KEY — script, stills, b-roll",
+  worker: "Mac generation worker — run pnpm worker in a separate terminal",
+  fish: "Fish website login — speech uses website credits",
+  whisper: "Local Whisper — word timestamps without API charges",
+  codex: "Codex ChatGPT login — scripts and images",
+  heygen: "HeyGen subscription OAuth login (optional)",
   replicate: "REPLICATE_API_KEY — the default lip-sync video provider",
   ffmpeg: "ffmpeg on PATH — audio/video processing",
 };
@@ -83,6 +87,10 @@ export function Wizard({ initial, initialStep }: { initial: ProjectDetail | null
   const [cast, setCast] = useState<CastChannel[]>(initial ? castFromHosts(initial.config.hosts) : defaultCast());
   const [topic, setTopic] = useState(initial?.config.topic ?? "What makes a good cold open?");
   const [style, setStyle] = useState(initial?.config.styleNote ?? "");
+  const [language, setLanguage] = useState(initial?.config.language ?? "en");
+  const [targetDurationSec, setTargetDurationSec] = useState(initial?.config.targetDurationSec ?? 90);
+  const [autoEmotionTags, setAutoEmotionTags] = useState(initial?.config.autoEmotionTags ?? true);
+  const [sourceLinks, setSourceLinks] = useState(initial?.config.sourceUrls?.join("\n") ?? "");
   const [aspect, setAspect] = useState<Aspect>((initial?.config.aspectRatio as Aspect) ?? "9:16");
   const [resolution, setResolution] = useState<"720p" | "1080p">(initial?.options?.videoResolution ?? "720p");
   const [busy, setBusy] = useState(false);
@@ -95,6 +103,7 @@ export function Wizard({ initial, initialStep }: { initial: ProjectDetail | null
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   const [clipTrimDrafts, setClipTrimDrafts] = useState<Record<string, ClipTrimDraft>>({});
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const createdSlug = useRef(slug);
 
   const { start, attach, cancel, running, log, error: runError } = useRun();
   // The last cast persist in flight — generate() awaits it so a run can never
@@ -125,11 +134,14 @@ export function Wizard({ initial, initialStep }: { initial: ProjectDetail | null
 
   // Lazily create the project so Step-1 face actions (upload / generate) work before a topic exists.
   const ensureProject = useCallback(async (): Promise<string | null> => {
-    if (slug) return slug;
+    if (slug || createdSlug.current) return slug ?? createdSlug.current;
     setEditError(null);
     try {
-      const detail = await createProject(configFrom(cast, topic, style, aspect, resolution));
+      const detail = await createProject(configFrom(cast, topic, style, aspect, resolution, language, {
+        targetDurationSec, autoEmotionTags, sourceUrls: sourceLinks.split(/\s+/).filter(Boolean),
+      }));
       clearStudioDraft(null);
+      createdSlug.current = detail.slug;
       setSlug(detail.slug);
       setProject(detail);
       return detail.slug;
@@ -137,7 +149,7 @@ export function Wizard({ initial, initialStep }: { initial: ProjectDetail | null
       setEditError(e instanceof Error ? e.message : String(e));
       return null;
     }
-  }, [slug, cast, topic, style, aspect, resolution]);
+  }, [slug, cast, topic, style, aspect, resolution, language, targetDurationSec, autoEmotionTags, sourceLinks]);
 
   const generate = useCallback(
     async (opts: GenerateOpts) => {
@@ -157,6 +169,7 @@ export function Wizard({ initial, initialStep }: { initial: ProjectDetail | null
         ...(opts.onlyTurns?.length ? { onlyTurns: opts.onlyTurns } : {}),
       });
       await refreshSlug(s);
+      if (opts.to === "render" && done?.stages.render === "done" && done.videoUrl) setStep(5);
       return done;
     },
     [slug, ensureProject, start, refreshSlug],
@@ -164,11 +177,12 @@ export function Wizard({ initial, initialStep }: { initial: ProjectDetail | null
 
   const patch = useCallback(
     async (body: PatchBody, opts?: { silent?: boolean }) => {
-      if (!slug) return;
       if (!opts?.silent) setBusy(true);
       setEditError(null);
       try {
-        const resp = await patchProject(slug, body);
+        const projectSlug = slug ?? (await ensureProject());
+        if (!projectSlug) return false;
+        const resp = await patchProject(projectSlug, body);
         // Surface what the edit invalidated — server-side clears delete real
         // (often paid) artifacts, and silence here reads as "my videos vanished".
         const parts: string[] = [];
@@ -179,14 +193,16 @@ export function Wizard({ initial, initialStep }: { initial: ProjectDetail | null
           if (noticeTimer.current) clearTimeout(noticeTimer.current);
           noticeTimer.current = setTimeout(() => setClearedNotice(null), 10_000);
         }
-        await refreshSlug(slug);
+        await refreshSlug(projectSlug);
+        return true;
       } catch (e) {
         setEditError(e instanceof Error ? e.message : String(e));
+        return false;
       } finally {
         if (!opts?.silent) setBusy(false);
       }
     },
-    [slug, refreshSlug],
+    [slug, refreshSlug, ensureProject],
   );
 
   // Commit Step-1 cast edits whenever the user leaves Step 1 — via Next OR the rail —
@@ -226,6 +242,10 @@ export function Wizard({ initial, initialStep }: { initial: ProjectDetail | null
     if (draft?.cast) setCast(draft.cast);
     if (draft?.topic != null) setTopic(draft.topic);
     if (draft?.style != null) setStyle(draft.style);
+    if (draft?.language) setLanguage(draft.language);
+    if (draft?.targetDurationSec != null) setTargetDurationSec(draft.targetDurationSec);
+    if (draft?.autoEmotionTags != null) setAutoEmotionTags(draft.autoEmotionTags);
+    if (draft?.sourceLinks != null) setSourceLinks(draft.sourceLinks);
     if (draft?.aspect) setAspect(draft.aspect);
     if (draft?.resolution) setResolution(draft.resolution);
     setDraftReady(true);
@@ -237,8 +257,8 @@ export function Wizard({ initial, initialStep }: { initial: ProjectDetail | null
   // Keep the current studio draft refresh-safe even before a project exists.
   useEffect(() => {
     if (!draftReady) return;
-    writeStudioDraft(slug, { cast, topic, style, aspect, resolution });
-  }, [draftReady, slug, cast, topic, style, aspect, resolution]);
+    writeStudioDraft(slug, { cast, topic, style, language, targetDurationSec, autoEmotionTags, sourceLinks, aspect, resolution });
+  }, [draftReady, slug, cast, topic, style, language, targetDurationSec, autoEmotionTags, sourceLinks, aspect, resolution]);
 
   // If an edit dropped maxStep below the current step, never render a step the rail can't reach.
   const effectiveStep = Math.min(step, maxStep);
@@ -280,6 +300,14 @@ export function Wizard({ initial, initialStep }: { initial: ProjectDetail | null
       setTopic,
       style,
       setStyle,
+      language,
+      setLanguage,
+      targetDurationSec,
+      setTargetDurationSec,
+      autoEmotionTags,
+      setAutoEmotionTags,
+      sourceLinks,
+      setSourceLinks,
       aspect,
       setAspect,
       resolution,
@@ -297,7 +325,7 @@ export function Wizard({ initial, initialStep }: { initial: ProjectDetail | null
       refresh: () => refreshSlug(slug),
       ensureProject,
     }),
-    [slug, project, effectiveStep, maxStep, go, cast, topic, style, aspect, resolution, busy, running, runError, editError, log, clipTrimDrafts, generate, confirm, patch, refreshSlug, ensureProject],
+    [slug, project, effectiveStep, maxStep, go, cast, topic, style, language, targetDurationSec, autoEmotionTags, sourceLinks, aspect, resolution, busy, running, runError, editError, log, clipTrimDrafts, generate, confirm, patch, refreshSlug, ensureProject],
   );
 
   const audioUrl = project?.audioUrl ?? null;
@@ -312,21 +340,24 @@ export function Wizard({ initial, initialStep }: { initial: ProjectDetail | null
 
   return (
     <WizardProvider value={ctx}>
-      <div className="flex min-h-[100dvh] flex-col bg-[var(--color-bg)]">
+      <div className="studio-shell">
+        <StudioSidebar />
+        <div className="studio-workspace flex min-h-[100dvh] flex-col">
         {/* Header */}
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--color-hairline)] px-4 py-2.5">
+        <header className="studio-header flex shrink-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">
             <a href="/studio" className="mono shrink-0 text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text)]" title="All videos">‹ all</a>
             <span className="hidden text-[var(--color-hairline)] sm:inline">/</span>
-            <span className="mono hidden text-[11px] tracking-[0.12em] text-[var(--color-text-muted)] sm:inline">SPEECHBASE STUDIO</span>
+            <span className="hidden text-sm font-semibold text-[var(--color-text)] sm:inline">Episode studio</span>
             {(project?.title || (slug && topic)) && (
               <>
                 <span className="text-[var(--color-hairline)]">/</span>
-                <span className="truncate text-[13px] text-[var(--color-text-secondary)]">{project?.title || topic}</span>
+                <span className="truncate text-sm text-[var(--color-text-secondary)]">{project?.title || topic}</span>
               </>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-3">
+            {project?.seriesId && <a href="/studio/series" className="text-xs font-semibold text-[var(--color-accent)]">Series ↗</a>}
             <HealthDots />
             <span className="mono border border-[var(--color-hairline)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)]">
               {aspect} · {project?.options?.videoResolution ?? resolution}
@@ -335,7 +366,7 @@ export function Wizard({ initial, initialStep }: { initial: ProjectDetail | null
         </header>
 
         {/* Step rail */}
-        <nav className="flex shrink-0 items-center gap-0 overflow-x-auto border-b border-[var(--color-hairline)] px-4 py-3">
+        <nav aria-label="Episode steps" className="studio-rail flex shrink-0 items-center overflow-x-auto">
           {STEPS.map((s, i) => {
             const active = s.n === effectiveStep;
             const reachable = s.n <= maxStep;
@@ -352,7 +383,7 @@ export function Wizard({ initial, initialStep }: { initial: ProjectDetail | null
                   <span
                     className="flex h-[22px] w-[22px] items-center justify-center text-[12px] font-medium"
                     style={{
-                      background: active ? "var(--color-accent)" : "var(--color-surface-2)",
+                      background: active ? "var(--color-accent-fill)" : "var(--color-surface-2)",
                       color: active ? "var(--color-accent-fg)" : done ? "var(--color-success)" : "var(--color-text-muted)",
                     }}
                   >
@@ -430,18 +461,19 @@ export function Wizard({ initial, initialStep }: { initial: ProjectDetail | null
           srcKey={(audioUrl ?? "none") + String(audioVersion)}
           durationSec={duration}
         >
-          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_clamp(300px,32vw,400px)]">
-            <main className="scroll-thin order-2 min-h-0 overflow-y-auto lg:order-1">
-              <div className="mx-auto w-full max-w-2xl px-5 py-6">
+          <div className="studio-body grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(260px,30%)]">
+            <main className="studio-editor scroll-thin min-w-0 min-h-0">
+              <div className="mx-auto w-full max-w-3xl px-5 py-7 sm:px-7">
                 <StepBody />
               </div>
             </main>
-            <aside className="order-1 border-b border-[var(--color-hairline)] lg:order-2 lg:border-b-0 lg:border-l">
+            <aside className="studio-preview" aria-label="Video preview">
               <Preview />
             </aside>
           </div>
         </TransportProvider>
         <ConfirmDialog request={confirmRequest} onResolve={resolveConfirm} />
+        </div>
       </div>
     </WizardProvider>
   );
@@ -462,7 +494,7 @@ function ConfirmDialog({
 
   return (
     <div className="fixed inset-0 z-[80] grid place-items-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-      <div className="w-full max-w-md border border-[var(--color-hairline)] bg-[var(--color-surface)] shadow-2xl">
+      <div className="dialog-surface w-full max-w-md border border-[var(--color-hairline)] bg-[var(--color-surface)] shadow-2xl">
         <div className="flex items-center gap-2 border-b border-[var(--color-hairline)] px-4 py-3">
           <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: accent }} />
           <h2 id="confirm-title" className="text-sm font-semibold text-[var(--color-text)]">{request.title}</h2>

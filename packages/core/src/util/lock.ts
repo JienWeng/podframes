@@ -15,8 +15,17 @@
  *    (in-process AND cross-process via the lock file).
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
+import { durableUpdate, processAlive } from "./durable";
+import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 
 const tails = new Map<string, Promise<unknown>>();
 const held = new Map<string, number>();
@@ -29,10 +38,11 @@ export const runLockFile = (root: string, slug: string): string =>
 
 function lockOwnerAlive(lockFile: string): number | null {
   try {
-    const { pid } = JSON.parse(readFileSync(lockFile, "utf8")) as { pid?: number };
+    const { pid } = JSON.parse(readFileSync(lockFile, "utf8")) as {
+      pid?: number;
+    };
     if (!pid || pid === process.pid) return null; // our own lock is tracked in-memory
-    process.kill(pid, 0); // throws if the process is gone → stale lock
-    return pid;
+    return processAlive(pid) ? pid : null;
   } catch {
     return null;
   }
@@ -56,20 +66,36 @@ export function isRunActive(slug: string, lockFile?: string): boolean {
  *  by a crashed process is silently reclaimed. */
 export function beginRun(slug: string, lockFile?: string): void {
   if (runs.has(slug)) {
-    throw new Error(`A generation run is already in progress for "${slug}". Wait for it to finish.`);
+    throw new Error(
+      `A generation run is already in progress for "${slug}". Wait for it to finish.`,
+    );
   }
   if (lockFile) {
-    if (existsSync(lockFile)) {
-      const pid = lockOwnerAlive(lockFile);
-      if (pid != null) {
-        throw new Error(
-          `A generation run is already in progress for "${slug}" (another process, pid ${pid}). Wait for it to finish.`,
+    const root = dirname(dirname(dirname(lockFile)));
+    durableUpdate(
+      root,
+      "run-locks",
+      () => ({}),
+      () => {
+        if (existsSync(lockFile)) {
+          const pid = lockOwnerAlive(lockFile);
+          if (pid != null) {
+            throw new Error(
+              `A generation run is already in progress for "${slug}" (another process, pid ${pid}). Wait for it to finish.`,
+            );
+          }
+        }
+        mkdirSync(dirname(lockFile), { recursive: true });
+        writeFileSync(
+          lockFile,
+          JSON.stringify({
+            pid: process.pid,
+            startedAt: new Date().toISOString(),
+          }),
         );
-      }
-    }
-    mkdirSync(dirname(lockFile), { recursive: true });
-    writeFileSync(lockFile, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
-    diskLocks.set(slug, lockFile);
+        diskLocks.set(slug, lockFile);
+      },
+    );
   }
   runs.add(slug);
 }
@@ -92,20 +118,77 @@ export function endRun(slug: string): void {
  * at a time in arrival order; different slugs run concurrently. The caller always
  * receives fn's own result/error, and a failed holder never rejects the next waiter.
  */
-export async function withProjectLock<T>(slug: string, fn: () => Promise<T>): Promise<T> {
+export async function withProjectLock<T>(
+  slug: string,
+  fn: () => Promise<T>,
+  root?: string,
+): Promise<T> {
+  let storageRoot = root ?? process.cwd();
+  if (!root) {
+    for (
+      let i = 0;
+      i < 6 && !existsSync(join(storageRoot, "pnpm-workspace.yaml"));
+      i++
+    )
+      storageRoot = dirname(storageRoot);
+  }
   const prev = tails.get(slug) ?? Promise.resolve();
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
   // The next waiter chains off this gate regardless of how prev/fn settle.
-  tails.set(slug, prev.then(() => gate, () => gate));
+  tails.set(
+    slug,
+    prev.then(
+      () => gate,
+      () => gate,
+    ),
+  );
   await prev.catch(() => {});
+  const owner = { pid: process.pid, id: randomUUID() };
+  type Owners = Record<string, typeof owner>;
+  let acquired = false;
+  try {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      acquired = durableUpdate(
+        storageRoot,
+        "project-locks",
+        (): Owners => ({}),
+        (owners) => {
+          const prior = owners[slug];
+          if (prior && processAlive(prior.pid)) return false;
+          owners[slug] = owner;
+          return true;
+        },
+      );
+      if (acquired) break;
+      await sleep(50);
+    }
+    if (!acquired)
+      throw new Error(
+        "Project is busy in another process. Wait for it to finish.",
+      );
+  } catch (error) {
+    release();
+    throw error;
+  }
   held.set(slug, (held.get(slug) ?? 0) + 1);
   try {
     return await fn();
   } finally {
-    const n = (held.get(slug) ?? 1) - 1;
-    if (n <= 0) held.delete(slug);
-    else held.set(slug, n);
-    release();
+    try {
+      durableUpdate(
+        storageRoot,
+        "project-locks",
+        (): Owners => ({}),
+        (owners) => {
+          if (owners[slug]?.id === owner.id) delete owners[slug];
+        },
+      );
+    } finally {
+      const n = (held.get(slug) ?? 1) - 1;
+      if (n <= 0) held.delete(slug);
+      else held.set(slug, n);
+      release();
+    }
   }
 }

@@ -1,5 +1,6 @@
+import { writingModel } from "./clients/writing";
 import { DEFAULT_OPTIONS } from "./config";
-import { CAPTION_STYLE_PRESETS, VIDEO_PROVIDERS, VISUAL_TREATMENTS } from "./shared";
+import { CAPTION_STYLE_PRESETS, VIDEO_PROVIDERS, VISUAL_TREATMENTS, isLanguageCode, isPublicSourceUrl } from "./shared";
 import type { ConversationConfig, Host, PipelineOptions } from "./types";
 
 /**
@@ -15,6 +16,14 @@ export function validateConfig(config: ConversationConfig): void {
 
   if (!config || typeof config !== "object") fail("expected an object");
   if (typeof config.topic !== "string" || !config.topic.trim()) fail("topic must be a non-empty string");
+  if (config.language != null && !isLanguageCode(config.language)) fail("language must be a language code such as en, ms, or zh");
+  if (config.targetDurationSec != null && !(Number.isFinite(config.targetDurationSec) && config.targetDurationSec >= 15 && config.targetDurationSec <= 600)) {
+    fail("targetDurationSec must be 15–600 seconds");
+  }
+  if (config.autoEmotionTags != null && typeof config.autoEmotionTags !== "boolean") fail("autoEmotionTags must be true or false");
+  if (config.sourceUrls != null && (!Array.isArray(config.sourceUrls) || config.sourceUrls.length > 5 || !config.sourceUrls.every(isPublicSourceUrl))) {
+    fail("sourceUrls must contain at most five public HTTPS links");
+  }
 
   if (!Array.isArray(config.hosts) || config.hosts.length !== 2) {
     fail(`hosts must be exactly [hostA, hostB] (got ${Array.isArray(config.hosts) ? config.hosts.length : typeof config.hosts})`);
@@ -60,6 +69,12 @@ export function validateOptions(options: Partial<PipelineOptions>, fail?: (msg: 
     if (!known.has(key)) raise(`unknown option "${key}" (valid: ${[...known].join(", ")})`);
   }
   const o = options;
+  for (const key of ["scriptModel", "cueModel"] as const) {
+    if (o[key] !== undefined) {
+      if (typeof o[key] !== "string") raise(`${key} must be a writing model ID.`);
+      try { writingModel(o[key]!); } catch { raise(`${key} must use codex-local or provider/model with codex, claude-code, openai, or anthropic.`); }
+    }
+  }
   const oneOf = <T,>(name: string, value: T | undefined, allowed: readonly T[]): void => {
     if (value != null && !allowed.includes(value)) {
       raise(`${name} must be one of ${allowed.join(" | ")} (got "${String(value)}")`);
@@ -71,6 +86,7 @@ export function validateOptions(options: Partial<PipelineOptions>, fail?: (msg: 
     }
   };
   oneOf("videoProvider", o.videoProvider, VIDEO_PROVIDERS.map((p) => p.id));
+  oneOf("heygenAuth", o.heygenAuth, ["subscription", "api"] as const);
   oneOf("videoResolution", o.videoResolution, ["720p", "1080p"] as const);
   oneOf("renderQuality", o.renderQuality, ["draft", "standard", "high"] as const);
   oneOf("fps", o.fps, [24, 30] as const);

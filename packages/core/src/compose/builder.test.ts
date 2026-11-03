@@ -103,6 +103,13 @@ test("buildComposition tiles already-trimmed clips on the shortened audio window
   const cinematic = buildComposition({ ...input, visualTreatment: "cinematic" });
   assert.match(cinematic, /id="episode-open"[^>]+treatment-cinematic/);
   assert.doesNotMatch(cinematic, /PODFRAMES \/|EDITORIAL CUT|CINEMATIC CUT|STORY ROUTED/);
+  const motion = buildComposition({ ...input, cues: [
+    { id: "visual-1", type: "broll", start: 0.5, end: 3.5, image: "media/broll/test.png" },
+  ] });
+  assert.match(motion, /\.broll-img', \{"scale":1\.12,"xPercent":-3,"yPercent":1\.5\}/);
+  assert.match(motion, /"scale":1\.28,"xPercent":3,"yPercent":-1\.5/);
+  assert.doesNotMatch(motion, /clipPath: 'inset\(0 100% 0 0\)'|VISUAL 01|stat-meter/);
+  assert.match(motion, /-webkit-line-clamp:2/);
 });
 
 test("buildComposition keeps multi-segment tracks exactly contiguous (no authored gaps)", () => {

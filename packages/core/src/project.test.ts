@@ -4,7 +4,26 @@ import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Project } from "./project";
+import { DEFAULT_HOSTS } from "./config";
+import { compilePerformance } from "./performance";
+import { clearTurnClips } from "./editing";
+import { isLanguageCode, languageLabel, voicePreviewText, withEmotionCue } from "./shared";
+import { validateConfig } from "./validate";
 import type { ConversationConfig } from "./types";
+
+test("language choices preserve locale and use translated preview text", async () => {
+  const root = await mkdtemp(join(tmpdir(), "podframes-language-"));
+  const config: ConversationConfig = { topic: "Bahasa Melayu", hosts: DEFAULT_HOSTS, language: "ms" };
+  validateConfig(config);
+  const project = await Project.create(config, root, "language");
+  assert.equal((await Project.load(root, project.slug))?.state.config.language, "ms");
+  assert.equal(languageLabel("ms-MY"), "Bahasa Melayu");
+  assert.match(voicePreviewText("ms"), /selamat/);
+  assert.match(voicePreviewText("zh"), /欢迎/);
+  assert.equal(isLanguageCode("zh-Hans"), true);
+  assert.equal(isLanguageCode("ms;bad"), false);
+  assert.throws(() => validateConfig({ ...config, language: "" }), /language must be/);
+});
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -89,8 +108,52 @@ test("Project.load fills new non-breaking option defaults on an existing schema"
   };
   const project = await Project.create(config, root, "defaults");
   delete (project.state.options as Partial<typeof project.state.options>).visualTreatment;
+  delete (project.state.options as Partial<typeof project.state.options>).heygenAuth;
   await project.save();
 
   const loaded = await Project.load(root, "defaults");
   assert.equal(loaded?.state.options.visualTreatment, "minimal");
+  assert.equal(loaded?.state.options.heygenAuth, "subscription");
+});
+
+test("clip regeneration clears failed HeyGen jobs and keeps pending jobs resumable", async () => {
+  const root = await mkdtemp(join(tmpdir(), "podframes-heygen-retry-"));
+  const project = await Project.create({ topic: "Retry remote jobs", hosts: DEFAULT_HOSTS }, root, "retry");
+  project.state.speech = {
+    audioPath: "audio/conversation.mp3", mediaType: "audio/mpeg", durationSec: 3, words: [],
+    turns: [0, 1, 2].map((index) => ({
+      turnIndex: index, hostId: "host_a", speaker: "HOST_A", text: "Hello",
+      start: index, end: index + 1, words: [], mediaType: "audio/mpeg", durationSec: 1,
+      segments: [{ audioPath: `audio/turn-${index}-0.mp3`, durationSec: 1 }],
+    })),
+  };
+  project.state.clips = { clips: [{ id: "turn-2-0", role: "avatar", turnIndex: 2,
+    path: "clips/turn-2-0.mp4", durationSec: 1, sourceImage: "avatar.png" }] };
+  await mkdir(project.path("clips"), { recursive: true });
+  for (let i = 0; i < 3; i++) {
+    await writeFile(project.path("clips", `turn-${i}-0.mp4.heygen.json`), JSON.stringify({ videoId: `video-${i}`, terminalFailed: i === 0 }));
+  }
+  await writeFile(project.path("clips", "turn-2-0.mp4"), "clip");
+  await clearTurnClips(project, [0, 1, 2]);
+  assert.equal(await exists(project.path("clips", "turn-0-0.mp4.heygen.json")), false);
+  assert.equal(await exists(project.path("clips", "turn-1-0.mp4.heygen.json")), true);
+  assert.equal(await exists(project.path("clips", "turn-2-0.mp4.heygen.json")), false);
+  assert.equal(await exists(project.path("clips", "turn-2-0.mp4")), false);
+});
+
+test("script duration and reference settings validate before generation", () => {
+  const base: ConversationConfig = { topic: "Check sources", hosts: DEFAULT_HOSTS };
+  validateConfig({ ...base, targetDurationSec: 120, autoEmotionTags: true, sourceUrls: ["https://www.binance.com/en/support/announcement"] });
+  assert.throws(() => validateConfig({ ...base, targetDurationSec: 0 }), /15–600/);
+  assert.throws(() => validateConfig({ ...base, sourceUrls: ["http://localhost/private"] }), /public HTTPS/);
+  assert.throws(() => validateConfig({ ...base, sourceUrls: Array(6).fill("https://example.com/news") }), /at most five/);
+});
+
+test("a per-line Fish cue overrides the host default without conflicting tags", () => {
+  const host = { ...DEFAULT_HOSTS[0], defaultStyle: "sarcastic" };
+  const turn = { index: 0, hostId: host.id, speaker: host.speaker, text: "[serious] This is confirmed." };
+  assert.equal(compilePerformance(host, turn).text, turn.text);
+  assert.equal(compilePerformance(host, { ...turn, text: "Hello." }).text, "[sarcastic] Hello.");
+  assert.equal(withEmotionCue("  [curious] [laughing] Hello [calm] there.", "serious"), "[serious] Hello [calm] there.");
+  assert.equal(withEmotionCue("  [curious] [laughing] Hello.", ""), "Hello.");
 });

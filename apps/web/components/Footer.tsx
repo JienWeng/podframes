@@ -8,11 +8,11 @@ export function Footer() {
         <div>
           <Wordmark />
           <p className="mt-2 max-w-sm text-sm text-[var(--color-text-secondary)]">
-            An open-source showcase for{" "}
-            <a href={SITE.speechbase} className="text-[var(--color-accent)] hover:underline">
-              Speechbase
+            An open-source podcast studio with{" "}
+            <a href={SITE.fish} className="text-[var(--color-accent)] hover:underline">
+              Fish Audio
             </a>
-            . Built with Gemini (Nano Banana 2), LTX-2.3 and{" "}
+            . Built with local Codex, P-Video, LTX, HeyGen and{" "}
             <a href={SITE.hyperframes} className="text-[var(--color-text)] hover:underline">
               HyperFrames
             </a>
@@ -23,7 +23,7 @@ export function Footer() {
           <a href={SITE.github} className="hover:text-[var(--color-text)]">
             GitHub
           </a>
-          <a href={SITE.speechbaseDocs} className="hover:text-[var(--color-text)]">
+          <a href={SITE.fishDocs} className="hover:text-[var(--color-text)]">
             Docs
           </a>
           <span className="mono text-xs text-[var(--color-text-muted)]">Apache-2.0</span>

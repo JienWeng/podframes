@@ -3,9 +3,15 @@ import { parseArgs } from "node:util";
 import { exec } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import {
   generate,
+  Project,
+  codexStatus,
+  claudeStatus,
+  fishStatus,
+  whisperStatus,
+  heygenStatus,
   resolveEnv,
   DEFAULT_HOSTS,
   STAGE_NAMES,
@@ -15,7 +21,9 @@ import {
   type Host,
   type StageName,
   type VisualTreatment,
+  type VideoProviderId,
 } from "@podframes/core";
+import { parsePastedScript } from "@podframes/core/script-import";
 
 const HELP = `
 podframes — turn a topic into an animated AI podcast video.
@@ -27,18 +35,26 @@ USAGE
   podframes --help
 
 OPTIONS
-  --topic <str>        Conversation topic (required unless --config)
+  --topic <str>        Conversation topic (required unless --config or --script)
   --config <file>      Load a full ConversationConfig JSON (overrides flags)
+  --script <file>      Import speaker-labelled .txt/.md and generate the full video
+  --template <slug>    Reuse a show's cast, saved portraits, settings and image library
   --style <str>        Tone/format note, e.g. "playful, debate-style"
   --turns <n>          Approx number of turns (default 14)
+  --duration <sec>     Approximate duration, 15–600 seconds (overrides turn target)
+  --no-emotion-tags    Omit automatic Fish delivery cues
+  --source <url>       Reference article to verify (repeat up to five times)
   --aspect <ratio>     16:9 (default) or 9:16
   --language <code>    Language code (default en)
   --slug <name>        Override the project folder name
 
-  --host-a "<name|model|voice>"   e.g. "Ada|openai/gpt-4o-mini-tts|alloy"
-  --host-b "<name|model|voice>"   e.g. "Theo|elevenlabs/eleven_v3|JBFqn..."
+  --host-a "<name|model|voice>"   e.g. "Ada|fish/s2.1-pro|<reference-id>"
+  --host-b "<name|model|voice>"   e.g. "Theo|fish/s2.1-pro|<reference-id>"
 
-  --provider <p>       Video backend: replicate-p-video (default, cheaper) | fal-ltx (higher-quality alt)
+  --writer <provider/model> Writing model, e.g. claude-code/sonnet or openai/<model>
+  --cue-writer <provider/model> Optional separate supporting-visual planner
+  --provider <p>       Video backend: replicate-p-video (default) | fal-ltx | heygen
+  --heygen-auth <mode> subscription (default) | api
   --treatment <t>      minimal (default) | editorial | cinematic
   --captions <s>       clean | karaoke | highlight | neon | slam | bold | gradient | boxed
   --resolution <r>     720p (default) | 1080p
@@ -56,6 +72,7 @@ EXAMPLES
   podframes generate --topic "Why is the sky blue?" --turns 10
   podframes generate --topic "The history of coffee" --aspect 9:16 --draft
   podframes generate --topic "AI agents" --only script,speech
+  podframes generate --script episode.md --provider heygen --heygen-auth subscription --language zh --aspect 9:16
   podframes generate --slug ai-agents --from stills
 `;
 
@@ -64,6 +81,7 @@ const COMMANDS = new Set(["generate", "doctor", "stages", "help"]);
 /** Preflight the environment: node, ffmpeg, and which keys are set. */
 async function doctor(root: string): Promise<void> {
   const ok = (b: boolean) => (b ? "✓" : "✗");
+  console.log(`  Claude Code subscription: ${ok(await claudeStatus())}`);
   const nodeMajor = Number(process.versions.node.split(".")[0]);
   const has = (bin: string) =>
     new Promise<boolean>((res) => {
@@ -72,8 +90,11 @@ async function doctor(root: string): Promise<void> {
   const [ffmpeg, ffprobe] = await Promise.all([has("ffmpeg"), has("ffprobe")]);
   const env = resolveEnv(root);
   const keys: Array<[string, boolean, string]> = [
-    ["SPEECHBASE_API_KEY", !!env.speechbaseApiKey, "the mixed conversation audio (required)"],
-    ["GEMINI_API_KEY", !!env.geminiApiKey, "script, stills, b-roll (required)"],
+    ["Fish website login", await fishStatus(), "speech uses website credits (required)"],
+    ["Local Whisper", await whisperStatus(), "word timestamps without API billing (required)"],
+    ["Codex ChatGPT login", await codexStatus(), "scripts and subscription image generation (required)"],
+    ["HeyGen subscription login", await heygenStatus("subscription"), "only for HeyGen subscription mode"],
+    ["HEYGEN_API_KEY", !!env.heygenApiKey, "only for HeyGen API mode"],
     ["REPLICATE_API_KEY", !!env.replicateApiKey, "the default replicate-p-video lip-sync video (required for the default path)"],
     ["FAL_API_KEY", !!env.falApiKey, "only if you switch --provider fal-ltx"],
   ];
@@ -82,8 +103,8 @@ async function doctor(root: string): Promise<void> {
   console.log(`  ${ok(ffmpeg)} ffmpeg ${ffmpeg ? "on PATH" : "MISSING — brew install ffmpeg"}`);
   console.log(`  ${ok(ffprobe)} ffprobe ${ffprobe ? "on PATH" : "MISSING — ships with ffmpeg"}`);
   for (const [name, set, why] of keys) console.log(`  ${ok(set)} ${name} — ${why}`);
-  console.log(`\n  keys load from ${root}/.env.local (cp .env.example .env.local)\n`);
-  const required = !ffmpeg || !ffprobe || nodeMajor < 22 || !env.speechbaseApiKey || !env.geminiApiKey || !env.replicateApiKey;
+  console.log(`\n  optional API keys load from ${root}/.env.local or .env; subscriptions use saved CLI logins\n`);
+  const required = !ffmpeg || !ffprobe || nodeMajor < 22 || !(await fishStatus()) || !(await whisperStatus()) || !(await codexStatus()) || !(env.replicateApiKey || env.falApiKey || env.heygenApiKey || await heygenStatus("subscription"));
   if (required) process.exitCode = 1;
 }
 
@@ -122,14 +143,22 @@ async function main(): Promise<void> {
     options: {
       topic: { type: "string" },
       config: { type: "string" },
+      script: { type: "string" },
+      template: { type: "string" },
       style: { type: "string" },
       turns: { type: "string" },
+      duration: { type: "string" },
+      "no-emotion-tags": { type: "boolean" },
+      source: { type: "string", multiple: true },
       aspect: { type: "string" },
       language: { type: "string" },
       slug: { type: "string" },
       "host-a": { type: "string" },
       "host-b": { type: "string" },
       provider: { type: "string" },
+      writer: { type: "string" },
+      "cue-writer": { type: "string" },
+      "heygen-auth": { type: "string" },
       treatment: { type: "string" },
       captions: { type: "string" },
       resolution: { type: "string" },
@@ -145,6 +174,7 @@ async function main(): Promise<void> {
   // Repo root = two levels up from apps/cli (so projects/ + .env.local resolve there).
   const here = dirname(fileURLToPath(import.meta.url));
   const root = resolve(here, "..", "..", "..");
+  const invocationCwd = process.env.INIT_CWD || process.cwd();
 
   if (command === "doctor") {
     await doctor(root);
@@ -152,25 +182,42 @@ async function main(): Promise<void> {
   }
 
   let config: ConversationConfig;
+  if (values.template && !/^[a-z0-9][a-z0-9-]*$/i.test(values.template)) throw new Error("Use the existing project's slug for --template.");
+  const existingEpisode = values.template && values.slug && /^[a-z0-9][a-z0-9-]*$/i.test(values.slug) ? await Project.load(root, values.slug) : null;
+  const template = existingEpisode?.state.templateSource === values.template && values.template
+    ? existingEpisode
+    : values.template ? await Project.load(root, values.template) : null;
+  if (values.template && !template) throw new Error(`Template project not found: ${values.template}`);
+  if (values.template && values.config) throw new Error("Choose --template or --config; a template already supplies the show's config.");
   if (values.config) {
-    config = JSON.parse(await readFile(resolve(process.cwd(), values.config), "utf8"));
+    config = JSON.parse(await readFile(resolve(invocationCwd, values.config), "utf8"));
   } else {
-    if (!values.topic) {
-      console.error("error: --topic is required (or pass --config <file>)\n");
+    if (!values.topic && !values.script) {
+      console.error("error: --topic is required (or pass --config / --script <file>)\n");
       console.log(HELP);
       process.exit(1);
     }
-    const hostA = values["host-a"] ? parseHost(values["host-a"], DEFAULT_HOSTS[0]) : DEFAULT_HOSTS[0];
-    const hostB = values["host-b"] ? parseHost(values["host-b"], DEFAULT_HOSTS[1]) : DEFAULT_HOSTS[1];
+    const baseHosts = template?.state.config.hosts ?? DEFAULT_HOSTS;
+    const hostA = values["host-a"] ? parseHost(values["host-a"], baseHosts[0]!) : baseHosts[0]!;
+    const hostB = values["host-b"] ? parseHost(values["host-b"], baseHosts[1]!) : baseHosts[1]!;
     config = {
-      topic: values.topic,
+      ...(template ? structuredClone(template.state.config) : {}),
+      ...(template ? { sourceUrls: [] } : {}),
+      topic: values.topic ?? basename(values.script!).replace(/\.(txt|md)$/i, ""),
       ...(values.style ? { styleNote: values.style } : {}),
       ...(values.turns ? { targetTurns: Number.parseInt(values.turns, 10) } : {}),
+      ...(values.duration ? { targetDurationSec: Number(values.duration) } : {}),
+      ...(values["no-emotion-tags"] ? { autoEmotionTags: false } : {}),
+      ...(values.source ? { sourceUrls: values.source } : {}),
       hosts: [hostA, hostB],
-      aspectRatio: values.aspect === "9:16" ? "9:16" : "16:9",
+      aspectRatio: values.aspect ? values.aspect === "9:16" ? "9:16" : "16:9" : template?.state.config.aspectRatio ?? "16:9",
       ...(values.language ? { language: values.language } : {}),
       options: {
-        ...(values.provider ? { videoProvider: values.provider as "fal-ltx" | "replicate-p-video" } : {}),
+        ...(template ? template.state.options : {}),
+        ...(values.writer ? { scriptModel: values.writer, cueModel: values.writer } : {}),
+        ...(values["cue-writer"] ? { cueModel: values["cue-writer"] } : {}),
+        ...(values.provider ? { videoProvider: values.provider as VideoProviderId } : {}),
+        ...(values["heygen-auth"] ? { heygenAuth: values["heygen-auth"] as "subscription" | "api" } : {}),
         ...(values.treatment ? { visualTreatment: values.treatment as VisualTreatment } : {}),
         ...(values.captions ? { captionStyle: values.captions as CaptionStyle } : {}),
         ...(values.resolution ? { videoResolution: values.resolution === "1080p" ? "1080p" : "720p" } : {}),
@@ -187,8 +234,15 @@ async function main(): Promise<void> {
     .join(" · ")}\n  voices mixed across: ${providers.join(", ")}\n`);
 
   const startedAt = Date.now();
+  const importedScript = values.script ? parsePastedScript(await readFile(resolve(invocationCwd, values.script), "utf8"), config.hosts, config.topic) : undefined;
+  if (importedScript) {
+    if (values.topic || values.config) importedScript.topic = config.topic;
+    else config.topic = importedScript.topic;
+  }
   const project = await generate(config, {
     root,
+    ...(importedScript ? { script: importedScript } : {}),
+    ...(values.template ? { template: values.template } : {}),
     ...(values.slug ? { slug: values.slug } : {}),
     ...(values.from ? { from: values.from as StageName } : {}),
     ...(values.to ? { to: values.to as StageName } : {}),

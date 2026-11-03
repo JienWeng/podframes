@@ -1,8 +1,8 @@
 import { basename, extname } from "node:path";
 import { buildComposition, type ClipView } from "../compose/builder";
-import { buildCaptionGroups } from "../compose/captions";
+import { buildCaptionGroups, scriptCaptionTurns } from "../compose/captions";
 import { buildTrimmedTimeline, mapCuesToTrimmedTimeline } from "../compose/trim";
-import { CANVAS, captionMaxWords } from "../shared";
+import { CANVAS, captionMaxWords, captionMaxChars } from "../shared";
 import { copyFonts } from "../compose/fonts";
 import { ensureDir, linkInto, writeText } from "../util/fs";
 import { concatAudio, probeDuration, sliceAudio } from "../util/audio";
@@ -28,7 +28,7 @@ export async function runCompose(ctx: StageContext): Promise<void> {
 
   log.info("linking media into the composition");
 
-  const timeline = buildTrimmedTimeline(speech.turns, clips.clips);
+  const timeline = buildTrimmedTimeline(scriptCaptionTurns(speech.turns), clips.clips);
   const segmentByClip = new Map(
     timeline.segments.map((seg) => [`${seg.turnIndex}:${seg.segIndex}`, seg]),
   );
@@ -89,7 +89,7 @@ export async function runCompose(ctx: StageContext): Promise<void> {
   for (const cue of broll?.cues ?? []) {
     let image: string | undefined;
     if (cue.imagePath) {
-      const dest = await linkInto(project.abs(cue.imagePath), `${mediaDir}/broll`, `${cue.id}.png`);
+      const dest = await linkInto(project.abs(cue.imagePath), `${mediaDir}/broll`, `${cue.id}${extname(cue.imagePath) || ".png"}`);
       image = `media/broll/${basename(dest)}`;
     }
     cues.push({ ...cue, ...(image ? { image } : {}) });
@@ -107,7 +107,7 @@ export async function runCompose(ctx: StageContext): Promise<void> {
 
   // Phrase length is a per-style layout choice (slam throws 2 words at a time,
   // boxed a full subtitle line) — see CAPTION_STYLE_PRESETS.maxWords.
-  const captions = buildCaptionGroups(timeline.turns, captionMaxWords(options.captionStyle));
+  const captions = buildCaptionGroups(timeline.turns, captionMaxWords(options.captionStyle), true, captionMaxChars(options.captionStyle));
 
   // Trim trailing silence: end the piece shortly after the last spoken word.
   // A turn with no word timestamps (a real Speechbase gateway path) contributes

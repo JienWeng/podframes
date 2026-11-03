@@ -12,11 +12,13 @@ import type { ProjectState } from "@podframes/core";
 export function projectSummary(state: ProjectState) {
   return {
     slug: state.slug,
+    seriesId: state.seriesId ?? null,
     topic: state.config.topic,
     title: state.script?.title ?? null,
     updatedAt: state.updatedAt,
     durationSec: state.output?.durationSec ?? state.speech?.durationSec ?? null,
     hasOutput: !!state.output,
+    templateReady: state.config.hosts.every((host) => !!(state.uploads?.[host.id] ?? state.stills?.hosts[host.id]?.imagePath)),
     videoUrl: state.output ? `/api/media/${state.slug}/${state.output.videoPath}` : null,
     hosts: state.config.hosts.map((h) => {
       const provider = providerOfModel(h.model);
@@ -32,6 +34,8 @@ export function projectSummary(state: ProjectState) {
 export function projectDetail(state: ProjectState) {
   return {
     ...projectSummary(state),
+    templateSource: state.templateSource ?? null,
+    reusableImageCount: state.brollLibrary?.length ?? 0,
     hook: state.script?.hook ?? null,
     script: state.script ?? null,
     // Bumps when the script stage (re)RUNS (markRunning sets startedAt), NOT on an edit-save
@@ -59,7 +63,9 @@ export function projectDetail(state: ProjectState) {
     // reload (the live SSE line is gone by then).
     stageErrors: Object.fromEntries(
       Object.entries(state.stages).flatMap(([k, v]) =>
-        v?.status === "error" && v.error ? [[k, v.error]] : [],
+        v?.status === "error" && v.error ? [[k, v.error.includes("Selected model is at capacity")
+          ? "Codex model is busy. Retry generation; completed audio will be reused."
+          : v.error]] : [],
       ),
     ) as Record<string, string>,
     audioUrl: state.speech ? `/api/media/${state.slug}/${state.speech.audioPath}` : null,

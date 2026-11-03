@@ -1,18 +1,17 @@
-import { generateProject, isRunActive, runLockFile, Project, type PipelineEvent, type StageName } from "@podframes/core";
+import {
+  automationJobs,
+  enqueueAutomation,
+  cancelAutomation,
+  isRunActive,
+  runLockFile,
+  Project,
+  withProjectLock,
+  STAGE_NAMES,
+  ensureEnvLoaded,
+  type PipelineEvent,
+  type StageName,
+} from "@podframes/core";
 import { findRepoRoot } from "@/lib/root";
-
-/**
- * The RunManager: pipeline runs live HERE, not inside an HTTP request.
- *
- * POST /api/generate registers a run and returns immediately; the browser (or
- * any number of browsers, or a browser that reloaded mid-run) attaches to
- * GET /api/projects/[slug]/run, which replays the buffered events and then
- * follows live. Closing the tab detaches a listener — the run itself keeps
- * going. DELETE aborts it cooperatively (stage boundaries + worker pools).
- *
- * The registry lives on globalThis so Next dev-server HMR recompiles can't
- * orphan an in-flight run's record.
- */
 
 export interface RunEvent {
   seq: number;
@@ -37,6 +36,7 @@ export interface DonePayload {
 }
 
 export interface RunRecord {
+  id: string;
   slug: string;
   status: "running" | "done" | "error";
   startedAt: string;
@@ -46,121 +46,133 @@ export interface RunRecord {
   seq: number;
 }
 
-const MAX_BUFFER = 600;
-
-const registry: Map<string, RunRecord> = ((globalThis as Record<string, unknown>).__podframesRuns ??=
-  new Map<string, RunRecord>()) as Map<string, RunRecord>;
-
-export const getRun = (slug: string): RunRecord | undefined => registry.get(slug);
-
-/** True while a run registered through this manager is in flight for the slug. */
-export const isRunActiveWeb = (slug: string): boolean => registry.get(slug)?.status === "running";
-
-/** True for a live run ANYWHERE: this manager, core's in-process registry, or
- *  another process entirely (a CLI run, via the on-disk .run.lock). */
+export function getRun(slug: string, id?: string): RunRecord | undefined {
+  const job = automationJobs(findRepoRoot()).findLast(
+    (job) => job.slug === slug && (!id || job.id === id),
+  );
+  if (!job) return undefined;
+  return {
+    id: job.id,
+    slug,
+    status:
+      job.status === "queued" || job.status === "running"
+        ? "running"
+        : job.status === "done"
+          ? "done"
+          : "error",
+    startedAt: job.startedAt,
+    events: job.events as RunEvent[],
+    seq: job.seq,
+    listeners: new Set(),
+    controller: new AbortController(),
+  };
+}
+export const isRunActiveWeb = (slug: string): boolean =>
+  getRun(slug)?.status === "running";
 export const isRunActiveAnywhere = (slug: string): boolean =>
   isRunActiveWeb(slug) || isRunActive(slug, runLockFile(findRepoRoot(), slug));
-
 export interface StartRunOptions {
   from?: StageName;
   to?: StageName;
   only?: StageName[];
   force?: boolean;
   onlyTurns?: number[];
+  acknowledgeInterrupted?: boolean;
 }
-
 export interface StartResult {
   ok: boolean;
   status: number;
   message?: string;
 }
-
-export async function startRun(slug: string, opts: StartRunOptions): Promise<StartResult> {
-  if (isRunActiveWeb(slug)) {
-    return { ok: false, status: 409, message: `A run is already in progress for "${slug}".` };
+export async function startRun(
+  slug: string,
+  opts: StartRunOptions,
+): Promise<StartResult> {
+  try {
+    return await withProjectLock(
+      slug,
+      () => reserveRun(slug, opts),
+      findRepoRoot(),
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      status: 503,
+      message: error instanceof Error ? error.message : "Queue unavailable",
+    };
   }
+}
+async function reserveRun(
+  slug: string,
+  opts: StartRunOptions,
+): Promise<StartResult> {
+  if (isRunActiveAnywhere(slug))
+    return {
+      ok: false,
+      status: 409,
+      message: "A run is already queued or running for this project.",
+    };
   const root = findRepoRoot();
+  ensureEnvLoaded(root);
   const project = await Project.load(root, slug);
-  if (!project) return { ok: false, status: 404, message: `project "${slug}" not found` };
-
-  const run: RunRecord = {
-    slug,
-    status: "running",
-    startedAt: new Date().toISOString(),
-    events: [],
-    listeners: new Set(),
-    controller: new AbortController(),
-    seq: 0,
-  };
-  registry.set(slug, run);
-  push(run, { type: "start" });
-
-  // Fire and forget — the run outlives this request.
-  void (async () => {
-    try {
-      const finished = await generateProject(project, {
-        root,
-        console: false,
-        signal: run.controller.signal,
-        ...(opts.from ? { from: opts.from } : {}),
-        ...(opts.to ? { to: opts.to } : {}),
-        ...(opts.only?.length ? { only: opts.only } : {}),
-        ...(opts.force ? { force: true } : {}),
-        ...(opts.onlyTurns?.length ? { onlyTurns: opts.onlyTurns } : {}),
-        onEvent: (event) => push(run, { type: "event", event }),
-      });
-      run.status = "done";
-      push(run, { type: "done", done: donePayload(finished) });
-    } catch (err) {
-      run.status = "error";
-      push(run, { type: "error", message: err instanceof Error ? err.message : String(err) });
-    }
-  })();
-
-  return { ok: true, status: 202 };
-}
-
-export function cancelRun(slug: string): boolean {
-  const run = registry.get(slug);
-  if (!run || run.status !== "running") return false;
-  run.controller.abort();
-  return true;
-}
-
-/** Attach a listener; the caller replays `events` up to the returned snapshot
- *  length itself, then receives only newer events (seq-gated — no gap, no dupe). */
-export function subscribe(slug: string, listener: (e: RunEvent) => void): (() => void) | null {
-  const run = registry.get(slug);
-  if (!run) return null;
-  run.listeners.add(listener);
-  return () => run.listeners.delete(listener);
-}
-
-function push(run: RunRecord, e: Omit<RunEvent, "seq" | "at">): void {
-  const full: RunEvent = { ...e, seq: run.seq++, at: new Date().toISOString() };
-  run.events.push(full);
-  if (run.events.length > MAX_BUFFER) run.events.splice(0, run.events.length - MAX_BUFFER);
-  for (const l of run.listeners) {
-    try {
-      l(full);
-    } catch {
-      /* a bad listener must never break the run */
-    }
+  if (!project)
+    return { ok: false, status: 404, message: "Project not found." };
+  const maxDuration = Number(process.env.PODFRAMES_MAX_EPISODE_SECONDS ?? 180);
+  if (!Number.isSafeInteger(maxDuration) || maxDuration < 1)
+    return {
+      ok: false,
+      status: 503,
+      message: "Configure PODFRAMES_MAX_EPISODE_SECONDS as a positive integer.",
+    };
+  if (
+    (project.state.config.targetDurationSec ?? 60) > maxDuration ||
+    (project.state.script?.turns.length ?? 0) > 120 ||
+    (project.state.script?.turns.reduce((n, turn) => n + turn.text.length, 0) ??
+      0) > 15000
+  )
+    return {
+      ok: false,
+      status: 400,
+      message: `Episode exceeds the generation safety limits. Maximum target duration is ${maxDuration}s, 120 turns and 15,000 script characters.`,
+    };
+  const stages = [
+    opts.from,
+    opts.to,
+    ...(Array.isArray(opts.only) ? opts.only : []),
+  ].filter((stage) => stage !== undefined);
+  if (
+    stages.some((stage) => !STAGE_NAMES.includes(stage as StageName)) ||
+    (opts.only !== undefined &&
+      (!Array.isArray(opts.only) || !opts.only.length)) ||
+    (opts.force !== undefined && typeof opts.force !== "boolean") ||
+    (opts.acknowledgeInterrupted !== undefined &&
+      typeof opts.acknowledgeInterrupted !== "boolean") ||
+    (opts.onlyTurns !== undefined &&
+      (!Array.isArray(opts.onlyTurns) ||
+        opts.onlyTurns.some((n) => !Number.isSafeInteger(n) || n < 0)))
+  )
+    return { ok: false, status: 400, message: "Invalid generation options." };
+  if (
+    opts.from &&
+    opts.to &&
+    STAGE_NAMES.indexOf(opts.from) > STAGE_NAMES.indexOf(opts.to)
+  )
+    return {
+      ok: false,
+      status: 400,
+      message: "The starting stage must precede the ending stage.",
+    };
+  try {
+    const { acknowledgeInterrupted, ...options } = opts;
+    enqueueAutomation(root, slug, options, acknowledgeInterrupted);
+    return { ok: true, status: 202 };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 409,
+      message: error instanceof Error ? error.message : String(error),
+    };
   }
 }
-
-function donePayload(project: Project): DonePayload {
-  const s = project.state;
-  return {
-    type: "done",
-    slug: project.slug,
-    title: s.script?.title ?? null,
-    hook: s.script?.hook ?? null,
-    turns: s.script?.turns ?? null,
-    audioUrl: s.speech ? `/api/media/${project.slug}/${s.speech.audioPath}` : null,
-    durationSec: s.output?.durationSec ?? s.speech?.durationSec ?? null,
-    videoUrl: s.output ? `/api/media/${project.slug}/${s.output.videoPath}` : null,
-    output: s.output ?? null,
-    stages: Object.fromEntries(Object.entries(s.stages).map(([k, v]) => [k, v?.status ?? "pending"])),
-  };
-}
+export const cancelRun = (slug: string): boolean =>
+  cancelAutomation(findRepoRoot(), slug);

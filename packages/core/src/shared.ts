@@ -9,7 +9,68 @@
  */
 
 export type * from "./types";
+
+/** Overscan keeps the image edges outside the frame throughout the pan. */
+export function brollMotion(index: number) {
+  const direction = index % 2 === 0 ? 1 : -1;
+  return {
+    from: { scale: 1.12, xPercent: -3 * direction, yPercent: 1.5 },
+    to: { scale: 1.28, xPercent: 3 * direction, yPercent: -1.5 },
+  };
+}
+
+export function brollMotionAt(index: number, elapsed: number, duration: number) {
+  const { from, to } = brollMotion(index);
+  const progress = Math.max(0, Math.min(1, elapsed / Math.max(0.01, duration)));
+  return {
+    scale: from.scale + (to.scale - from.scale) * progress,
+    xPercent: from.xPercent + (to.xPercent - from.xPercent) * progress,
+    yPercent: from.yPercent + (to.yPercent - from.yPercent) * progress,
+  };
+}
 import type { PipelineOptions, StageName } from "./types";
+
+/** Script/preview languages supported by the studio and multilingual Whisper. */
+export const LANGUAGES = [
+  { code: "en", label: "English", sample: "Hey, welcome back to the show. Let's get into it." },
+  { code: "ms", label: "Bahasa Melayu", sample: "Hai, selamat kembali ke rancangan kami. Mari kita mulakan." },
+  { code: "zh", label: "中文（普通话）", sample: "大家好，欢迎回到我们的节目。我们开始吧。" },
+  { code: "ta", label: "தமிழ்", sample: "வணக்கம், எங்கள் நிகழ்ச்சிக்கு மீண்டும் வரவேற்கிறோம். தொடங்கலாம்." },
+  { code: "id", label: "Bahasa Indonesia", sample: "Halo, selamat datang kembali di acara kami. Mari kita mulai." },
+  { code: "ja", label: "日本語", sample: "こんにちは、番組へようこそ。それでは始めましょう。" },
+  { code: "ko", label: "한국어", sample: "안녕하세요, 저희 방송에 다시 오신 것을 환영합니다. 시작해 볼까요?" },
+  { code: "es", label: "Español", sample: "Hola, bienvenidos de nuevo al programa. Vamos a empezar." },
+  { code: "fr", label: "Français", sample: "Bonjour, bienvenue dans notre émission. C'est parti." },
+  { code: "de", label: "Deutsch", sample: "Hallo, willkommen zurück zu unserer Sendung. Legen wir los." },
+  { code: "hi", label: "हिन्दी", sample: "नमस्ते, हमारे कार्यक्रम में फिर से आपका स्वागत है। चलिए शुरू करते हैं।" },
+  { code: "ar", label: "العربية", sample: "مرحباً، أهلاً بعودتكم إلى برنامجنا. هيا نبدأ." },
+  { code: "th", label: "ไทย", sample: "สวัสดี ยินดีต้อนรับกลับสู่รายการของเรา มาเริ่มกันเลย" },
+  { code: "vi", label: "Tiếng Việt", sample: "Xin chào, chào mừng trở lại chương trình. Chúng ta bắt đầu nhé." },
+] as const;
+
+export const languageLabel = (code = "en"): string =>
+  LANGUAGES.find((language) => language.code === code.toLowerCase().split("-")[0])?.label ?? code;
+
+export const voicePreviewText = (code = "en"): string =>
+  LANGUAGES.find((language) => language.code === code.toLowerCase().split("-")[0])?.sample ?? LANGUAGES[0].sample;
+
+export const isLanguageCode = (value: unknown): value is string =>
+  typeof value === "string" && /^[a-z]{2,20}(?:-[a-z0-9]{2,8})*$/i.test(value);
+
+export function isPublicSourceUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password && !url.port &&
+      /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(url.hostname) &&
+      !/(?:^|\.)(?:localhost|local|internal|invalid|test|example)$/i.test(url.hostname);
+  } catch { return false; }
+}
+
+export const EMOTION_TAGS = ["curious", "surprised", "calm", "empathetic", "uncertain", "sarcastic", "laughing", "serious"] as const;
+
+export const withEmotionCue = (text: string, cue: string): string =>
+  `${cue ? `[${cue}] ` : ""}${text.trimStart().replace(/^(?:\[[^\]]+\]\s*)+/, "")}`;
 
 /** On-disk project.json schema version. Bumped on breaking shape changes —
  *  older shapes are REFUSED, never migrated (clean-cutover rule).
@@ -39,6 +100,7 @@ export const BRAND = {
 
 /** Provider channel colors — the patch-bay palette (design.md → provider table). */
 export const PROVIDER_COLORS: Record<string, string> = {
+  fish: "#60A5FA",
   openai: "#34D399",
   elevenlabs: "#A78BFA",
   cartesia: "#22D3EE",
@@ -73,6 +135,8 @@ export const CAPTION_STYLE_PRESETS = [
 /** Grouping length for a caption style (see CAPTION_STYLE_PRESETS.maxWords). */
 export const captionMaxWords = (style: string): number =>
   CAPTION_STYLE_PRESETS.find((p) => p.id === style)?.maxWords ?? 6;
+
+export const captionMaxChars = (style: string): number => style === "slam" ? 12 : style === "bold" ? 20 : 28;
 
 /**
  * Additive output treatments. Minimal is the original podframes composition;
@@ -194,6 +258,13 @@ export const VIDEO_PROVIDERS = [
     envKey: "REPLICATE_API_KEY",
   },
   {
+    id: "heygen",
+    label: "HeyGen",
+    vendor: "HeyGen CLI",
+    blurb: "Image-to-video with subscription or API credits.",
+    envKey: "HEYGEN_API_KEY",
+  },
+  {
     id: "fal-ltx",
     label: "LTX-2.3",
     vendor: "fal.ai",
@@ -211,7 +282,7 @@ export type VideoProviderId = (typeof VIDEO_PROVIDERS)[number]["id"];
  *   Replicate prunaai/p-video-avatar: $0.025/s 720p · $0.045/s 1080p — replicate.com/prunaai/p-video-avatar
  * Used for the pre-generation cost estimate in the studio — an ESTIMATE, not a quote.
  */
-export const PRICING: Record<VideoProviderId, { perSecond: Record<"720p" | "1080p", number> }> = {
+export const PRICING: Partial<Record<VideoProviderId, { perSecond: Record<"720p" | "1080p", number> }>> = {
   "fal-ltx": { perSecond: { "720p": 0.1, "1080p": 0.1 } },
   "replicate-p-video": { perSecond: { "720p": 0.025, "1080p": 0.045 } },
 };

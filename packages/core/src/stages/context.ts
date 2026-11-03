@@ -1,4 +1,4 @@
-import type { GeminiClient } from "../clients/gemini";
+import type { GenerationClient } from "../clients/writing";
 import type { Project } from "../project";
 import type { ResolvedEnv } from "../config";
 import type { Reporter } from "../util/events";
@@ -6,7 +6,7 @@ import type { Reporter } from "../util/events";
 /** Everything a stage needs. Threaded through the orchestrator. */
 export interface StageContext {
   project: Project;
-  gemini: GeminiClient;
+  codex: GenerationClient;
   env: ResolvedEnv;
   reporter: Reporter;
   /** Cooperative cancellation — worker pools stop claiming new units when aborted. */

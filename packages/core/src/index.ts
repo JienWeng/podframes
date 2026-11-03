@@ -1,8 +1,8 @@
 /**
  * @podframes/core — topic → animated AI podcast video.
  *
- * Pipeline: script (Gemini) → speech (Speechbase multi-provider conversation) →
- * stills/base avatars → video (P-Video Avatar or LTX) → b-roll cues (Gemini) →
+ * Pipeline: script (local Codex) → speech (Fish Audio + word timestamps) →
+ * stills/base avatars → video (P-Video Avatar, LTX, or HeyGen) → b-roll (Codex) →
  * compose (HyperFrames HTML) → render (MP4).
  */
 
@@ -81,11 +81,22 @@ export { clearStages, clearTurnClips, clearSpeechTurns, STAGE_ARTIFACTS, INVALID
 // Per-project write coordination (prevents concurrent edits/runs from corrupting project.json)
 export { withProjectLock, isProjectBusy, isRunActive, runLockFile } from "./util/lock";
 export { brollImagePrompt, brollImagePath, brollImageGeometry } from "./stages/broll";
-export { castHost } from "./stages/stills";
+export { castHost, avatarPrompt } from "./stages/stills";
+export { applyShowTemplate } from "./show-template";
+export { directScriptDelivery } from "./delivery";
+export { loadScriptExamples } from "./script-library";
 
 // Performance direction (inline audio tags + ElevenLabs stability)
 export { compilePerformance, isAudioTagWord } from "./performance";
 
 // Clients (for advanced / direct usage)
-export { GeminiClient } from "./clients/gemini";
-export { synthesizeConversation, synthesizeOne, synthesizeTurn } from "./clients/speechbase";
+export { heygenStatus, assertHeygenAuth } from "./clients/heygen";
+export { CodexClient, codexStatus } from "./clients/codex";
+export { whisperStatus } from "./clients/whisper";
+export { synthesizeOne, synthesizeTurn, fishStatus } from "./clients/fish";
+
+export { WritingClient, writingModel, claudeStatus, assertWritingReady } from "./clients/writing";
+export type { GenerationClient } from "./clients/writing";
+export { automationJobs, enqueueAutomation, claimAutomation, automationEvent, cancelAutomation, workerHeartbeat, workerOnline } from "./automation";
+export type { AutomationJob, AutomationEvent } from "./automation";
+export { durableRead, durableUpdate } from "./util/durable";

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { captionMaxWords, TREATMENT_INTRO } from "@podframes/core/shared";
+import { captionMaxWords, captionMaxChars, TREATMENT_INTRO, brollMotionAt } from "@podframes/core/shared";
+import { buildCaptionGroups, scriptCaptionTurns } from "@podframes/core/captions";
 import {
   buildTrimmedTimeline,
   mapCuesToTrimmedTimeline,
@@ -15,7 +16,7 @@ import { useTransport } from "@/components/studio/transport";
 import { rosterThumb } from "@/lib/roster";
 import { useWizard } from "./context";
 import { hostFace } from "./cast";
-import type { CaptionStyle, VisualTreatment, WordTs } from "@podframes/core";
+import type { CaptionStyle, VisualTreatment } from "@podframes/core";
 
 const EMPTY_REGIONS: TurnRegion[] = [];
 const EMPTY_CLIPS: ClipAsset[] = [];
@@ -31,7 +32,8 @@ export function Preview() {
   const [showFinal, setShowFinal] = useState(false);
 
   const vertical = (project?.config.aspectRatio ?? "9:16") === "9:16";
-  const sourceRegions = project?.speech?.turns ?? EMPTY_REGIONS;
+  const speechRegions = project?.speech?.turns ?? EMPTY_REGIONS;
+  const sourceRegions = useMemo(() => scriptCaptionTurns(speechRegions), [speechRegions]);
   const hasFinal = project?.stages.render === "done" && !!project?.videoUrl;
   const hasAudio = duration > 0;
   const sourceClips = project?.clips ?? EMPTY_CLIPS;
@@ -135,9 +137,9 @@ export function Preview() {
   const regionHasTrim = !!regionClip && ((regionClip.trimStartSec ?? 0) > 0 || (regionClip.trimEndSec ?? 0) > 0);
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 bg-[var(--color-bg)] p-5">
+    <div className="preview-monitor flex h-full flex-col items-center justify-center gap-4 bg-[var(--color-bg)] p-5">
       <div
-        className="relative overflow-hidden border border-[var(--color-hairline)] bg-[var(--color-surface-2)]"
+        className="relative overflow-hidden rounded-xl border border-[var(--color-hairline)] bg-[var(--color-surface-2)]"
         style={{ aspectRatio: vertical ? "9 / 16" : "16 / 9", height: vertical ? "min(48vh, 440px)" : "auto", width: vertical ? "auto" : "min(100%, 460px)" }}
       >
         {showRenderedFinal ? (
@@ -173,7 +175,7 @@ export function Preview() {
             {/* B-roll is a centered overlay card now (matches compose/builder.ts), not a
                 full-frame takeover — the host stays visible, so a fresh speaker-switch is
                 never erased by it. */}
-            {activeCue && <CueCard cue={activeCue} cueIndex={activeCueIndex} color={cueColor(activeCue)} slug={slug} updatedAt={project?.updatedAt} treatment={visualTreatment} />}
+            {activeCue && <CueCard cue={activeCue} cueIndex={activeCueIndex} time={displayTime} color={cueColor(activeCue)} slug={slug} updatedAt={project?.updatedAt} treatment={visualTreatment} />}
             {region && <Karaoke region={region} time={displayTime} style={captionStyle} color={captionColor} />}
             {visualTreatment !== "minimal" &&
               displayDuration > TREATMENT_INTRO.minEpisodeSec &&
@@ -218,7 +220,7 @@ export function Preview() {
               ) : hasFinal ? (
                 <button onClick={() => setShowFinal((v) => !v)} className="text-[var(--color-accent)] hover:underline">{showFinal ? "show draft" : "play final"}</button>
               ) : (
-                mixBadge && <span className="truncate px-1 text-[9px] text-[var(--color-text-muted)]" title="One mixed, leveled Speechbase track">{mixBadge}</span>
+                mixBadge && <span className="truncate px-1 text-[9px] text-[var(--color-text-muted)]" title="One combined Fish Audio track">{mixBadge}</span>
               )}
               <span>{tc(displayDuration)}</span>
             </div>
@@ -311,7 +313,7 @@ function CastPreview() {
           const face = hostFace(project, slug, ch);
           return (
             <div key={ch.id} className="flex flex-col items-center gap-1.5">
-              <div className="h-16 w-16 overflow-hidden bg-[var(--color-surface)]" style={{ border: `1px solid ${color}` }}>
+              <div className="h-20 w-20 overflow-hidden rounded-xl bg-[var(--color-surface)]" style={{ border: `1px solid ${color}` }}>
                 {face ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={face} alt={ch.name} className="h-full w-full object-cover" style={{ transform: ch.flip ? "scaleX(-1)" : undefined }} />
@@ -390,18 +392,20 @@ function ClipRail({ regions, started, finished }: { regions: TurnRegion[]; start
 /** stat/quote/lower-third cards, mirroring compose/builder.ts's cueInner() so the preview
  *  matches what the real render actually draws over the (still-visible) host.
  *  `cueIndex` drives the editorial side alternation — same modulo as the render. */
-function CueCard({ cue, cueIndex, color, slug, updatedAt, treatment }: { cue: Cue; cueIndex: number; color: string; slug: string | null; updatedAt?: string; treatment: VisualTreatment }) {
+function CueCard({ cue, cueIndex, time, color, slug, updatedAt, treatment }: { cue: Cue; cueIndex: number; time: number; color: string; slug: string | null; updatedAt?: string; treatment: VisualTreatment }) {
   // Mirrors builder.ts: even cues sit right, odd cues left (editorial only).
   const editorialSide = cueIndex % 2 === 0 ? "justify-end" : "justify-start";
   if (cue.type === "broll") {
     if (!cue.imagePath || !slug) return null;
+    const elapsed = time - cue.start;
+    const motion = brollMotionAt(cueIndex, elapsed, cue.end - cue.start);
+    const imageStyle = { transform: `translate(${motion.xPercent}%, ${motion.yPercent}%) scale(${motion.scale})` };
+    const cardStyle = { opacity: Math.max(0, Math.min(1, elapsed / 0.35, (cue.end - time) / 0.28)) };
     if (treatment === "cinematic") {
       return (
-        // key remounts per cue so the cue-pop entrance replays when playback
-        // jumps straight from one b-roll cue to the next (same as the card path).
-        <div key={cue.id} className="absolute inset-0 bg-black">
+        <div key={cue.id} className="absolute inset-0 overflow-hidden bg-black" style={cardStyle}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={mediaUrl(slug, cue.imagePath, updatedAt)} alt="" className="cue-pop h-full w-full object-cover" />
+          <img src={mediaUrl(slug, cue.imagePath, updatedAt)} alt="" className="h-full w-full object-cover" style={imageStyle} />
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/25" />
           {cue.title && <div className="absolute inset-x-5 bottom-[17%] border-l-4 pl-3 text-lg font-extrabold leading-tight text-white" style={{ borderColor: color }}>{cue.title}</div>}
         </div>
@@ -409,11 +413,9 @@ function CueCard({ cue, cueIndex, color, slug, updatedAt, treatment }: { cue: Cu
     }
     return (
       <div className={`absolute inset-0 flex px-[8%] ${treatment === "editorial" ? `items-start ${editorialSide} pt-[9%]` : "items-center justify-center"}`}>
-        {/* cue-pop mirrors the render's GSAP entrance (scale+opacity, back.out overshoot);
-            key remounts it (replaying the animation) each time you scrub into a new cue. */}
-        <div key={cue.id} className={`cue-pop relative aspect-square overflow-hidden border border-[var(--color-hairline)] shadow-lg ${treatment === "editorial" ? "w-[70%] max-w-[250px]" : "w-[60%] max-w-[220px]"}`}>
+        <div key={cue.id} style={cardStyle} className={`relative aspect-square overflow-hidden border border-[var(--color-hairline)] shadow-lg ${treatment === "editorial" ? "w-[70%] max-w-[250px]" : "w-[60%] max-w-[220px]"}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={mediaUrl(slug, cue.imagePath, updatedAt)} alt="" className="h-full w-full object-cover" />
+          <img src={mediaUrl(slug, cue.imagePath, updatedAt)} alt="" className="h-full w-full object-cover" style={imageStyle} />
           <div className="absolute inset-0 bg-gradient-to-b from-black/0 via-black/0 to-black/75" />
           {cue.title && (
             <div className="absolute inset-x-2.5 bottom-2 flex items-center gap-1.5 overflow-hidden text-[11px] font-bold text-white">
@@ -477,27 +479,6 @@ function TreatmentIntro({ title, hook, time, duration }: { title: string; hook: 
   );
 }
 
-/** Mirror compose/captions.ts grouping so the preview shows the same PHRASES the
- *  render will: break on sentence ends, pauses, and the style's maxWords. */
-function groupWords(words: WordTs[], maxWords: number): WordTs[][] {
-  const groups: WordTs[][] = [];
-  let bucket: WordTs[] = [];
-  const flush = () => {
-    if (bucket.length) groups.push(bucket);
-    bucket = [];
-  };
-  for (let i = 0; i < words.length; i++) {
-    const w = words[i]!;
-    const prev = words[i - 1];
-    const gap = prev ? w.start - prev.end : 0;
-    if (bucket.length > 0 && (bucket.length >= maxWords || gap >= 0.45)) flush();
-    bucket.push(w);
-    if (/[.!?]$/.test(w.text)) flush();
-  }
-  flush();
-  return groups;
-}
-
 /** Per-style caption typography for the preview pane (scaled-down mirror of the
  *  render's .style-* CSS — slam is two huge words, boxed a smaller full line). */
 function capClass(style: CaptionStyle): string {
@@ -520,12 +501,8 @@ function capClass(style: CaptionStyle): string {
 
 function Karaoke({ region, time, style, color }: { region: TurnRegion; time: number; style: CaptionStyle; color: string }) {
   const boxed = style === "boxed";
-  const groups = useMemo(() => groupWords(region.words, captionMaxWords(style)), [region.words, style]);
-  // The group under the playhead (or the next one up, before its first word starts).
-  const active =
-    groups.find((g) => time >= g[0]!.start && time < g[g.length - 1]!.end + 0.15) ??
-    groups.find((g) => g[0]!.start >= time) ??
-    groups[groups.length - 1];
+  const groups = useMemo(() => buildCaptionGroups([region], captionMaxWords(style), true, captionMaxChars(style)), [region, style]);
+  const active = groups.find((group) => time >= group.start && time < group.end);
   if (!active) return null;
   // slam/bold pop + 900 weight eat the inter-word space — pad words so the
   // active word never touches its neighbor (mirrors the render's span padding).
@@ -533,12 +510,12 @@ function Karaoke({ region, time, style, color }: { region: TurnRegion; time: num
     style === "slam" ? { padding: "0 0.14em" } : style === "bold" ? { padding: "0 0.1em" } : undefined;
   return (
     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-5 pb-6 pt-10 text-center">
-      <p className={capClass(style)} style={boxed ? { display: "inline-block", background: color, padding: "0.15em 0.5em" } : undefined}>
-        {active.map((w, i) => {
+      <p className={`${capClass(style)} line-clamp-2 break-words [text-wrap:balance]`} style={boxed ? { background: color, padding: "0.15em 0.5em" } : undefined}>
+        {active.words.map((w, i) => {
           const state: WordState = time >= w.start && time < w.end ? "active" : time >= w.end ? "played" : "upcoming";
           return (
             <span key={i} style={{ ...wordGap, ...wordStyle(style, state, color) }}>
-              {w.text}{" "}
+              {w.text}
             </span>
           );
         })}

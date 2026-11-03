@@ -40,6 +40,9 @@ export const createProject = (config: Record<string, unknown>): Promise<ProjectD
     body: JSON.stringify({ config }),
   }).then(jsonOrThrow);
 
+export const createFromTemplate = (template: string): Promise<ProjectDetail> =>
+  fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ template }) }).then(jsonOrThrow);
+
 /** PATCH also reports what it invalidated — the UI surfaces it, so a paid
  *  artifact can never silently vanish after an edit. */
 export const patchProject = (
@@ -60,12 +63,29 @@ export function uploadHostPhoto(slug: string, hostId: string, file: File): Promi
   return fetch(`/api/projects/${slug}/cast`, { method: "POST", body: fd }).then(jsonOrThrow);
 }
 
+export function generateHostPhoto(slug: string, hostId: string, appearance: string): Promise<unknown> {
+  return fetch(`/api/projects/${slug}/cast`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hostId, appearance }),
+  }).then(jsonOrThrow);
+}
+
 export const regenCueImage = (slug: string, cueId: string, imagePrompt?: string): Promise<{ imageUrl: string }> =>
   fetch(`/api/projects/${slug}/broll/${cueId}/regenerate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ imagePrompt }),
   }).then(jsonOrThrow);
+
+export function uploadCuePhoto(slug: string, cueId: string, file: File): Promise<unknown> {
+  const body = new FormData();
+  body.append("file", file);
+  return fetch(`/api/projects/${slug}/broll/${cueId}/regenerate`, { method: "POST", body }).then(jsonOrThrow);
+}
+
+export const directDelivery = (slug: string): Promise<{ script: Script }> =>
+  fetch(`/api/projects/${slug}/script/delivery`, { method: "POST" }).then(jsonOrThrow);
 
 /** Delete specific turns' lip-sync clips (keeps the rest cached) so the next
  *  generate({to:"video"}) re-animates only the ones you checked. */
@@ -81,6 +101,7 @@ export const mediaUrl = (slug: string, rel: string, v?: string | number) =>
 
 /** Synthesize a one-line voice sample; returns an object URL to play. */
 export async function previewVoice(opts: {
+  language?: string;
   model: string;
   voice: string;
   stability?: number;

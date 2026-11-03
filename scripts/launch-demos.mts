@@ -10,7 +10,7 @@
  * 2. demo-what-this-cost   9:16  highlight Sol+Maya   — per-second economics, receipt energy
  * 3. demo-dinosaurs        9:16  neon      Nia+Ren    — "normal" content showing b-roll range
  *
- * Same roster + official-reel settings as scripts/showcase.mts (fal-ltx, branding on).
+ * Same roster + official-reel settings as scripts/showcase.mts (fal-ltx).
  * 9:16 clips reuse projects/_roster stills; the 16:9 hero generates its own.
  */
 import { mkdir, copyFile, rm } from "node:fs/promises";
@@ -28,10 +28,6 @@ import {
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ROSTER_DIR = join(ROOT, "projects", "_roster");
 
-const EXPRESSIVE = {
-  voice_settings: { stability: 0.4, similarity_boost: 0.85, style: 0.45, use_speaker_boost: true },
-};
-
 interface RosterHost {
   key: string;
   name: string;
@@ -43,19 +39,19 @@ interface RosterHost {
 }
 
 const ROSTER: Record<string, RosterHost> = {
-  ada: { key: "ada", name: "Ada", model: "google/gemini-3.1-flash-tts-preview", voice: "Aoede", persona: "warm, curious lead host", appearance: "East Asian woman early 30s, sleek straight black shoulder-length hair, light warm skin, olive blazer over a white tee, friendly expressive face" },
-  sol: { key: "sol", name: "Sol", model: "google/gemini-3.1-flash-tts-preview", voice: "Puck", persona: "laid-back, funny", appearance: "Latino man mid-30s, short dark wavy hair, trimmed beard, warm olive skin, denim shirt, relaxed grin" },
-  nia: { key: "nia", name: "Nia", model: "google/gemini-3.1-flash-tts-preview", voice: "Leda", persona: "precise, endlessly curious", appearance: "South Asian woman late 20s, long dark wavy hair, brown skin, emerald green blouse, thoughtful" },
-  theo: { key: "theo", name: "Theo", model: "elevenlabs/eleven_v3", voice: "bIHbv24MWmeRgasZH58o", persona: "lively, energetic", appearance: "white man late 30s, light stubble, glasses, fair skin, charcoal henley, animated", providerOptions: EXPRESSIVE },
-  maya: { key: "maya", name: "Maya", model: "elevenlabs/eleven_v3", voice: "EXAVITQu4vr4xnSDxMaL", persona: "sharp, witty", appearance: "Black woman early 30s, voluminous natural curls, warm brown skin, mustard turtleneck, expressive", providerOptions: EXPRESSIVE },
-  ren: { key: "ren", name: "Ren", model: "elevenlabs/eleven_v3", voice: "iP95p4xoKVk53GoZ742B", persona: "deadpan, clever", appearance: "East Asian man early 30s, modern undercut hairstyle, light skin, black bomber jacket, cool composed", providerOptions: EXPRESSIVE },
+  ada: { key: "ada", name: "Ada", model: "fish/s2.1-pro", voice: "ca3007f96ae7499ab87d27ea3599956a", persona: "warm, curious lead host", appearance: "East Asian woman early 30s, sleek straight black shoulder-length hair, light warm skin, olive blazer over a white tee, friendly expressive face" },
+  sol: { key: "sol", name: "Sol", model: "fish/s2.1-pro", voice: "9a9cf47702da476aa4629e2506d4a857", persona: "laid-back, funny", appearance: "Latino man mid-30s, short dark wavy hair, trimmed beard, warm olive skin, denim shirt, relaxed grin" },
+  nia: { key: "nia", name: "Nia", model: "fish/s2.1-pro", voice: "ca3007f96ae7499ab87d27ea3599956a", persona: "precise, endlessly curious", appearance: "South Asian woman late 20s, long dark wavy hair, brown skin, emerald green blouse, thoughtful" },
+  theo: { key: "theo", name: "Theo", model: "fish/s2.1-pro", voice: "9a9cf47702da476aa4629e2506d4a857", persona: "lively, energetic", appearance: "white man late 30s, light stubble, glasses, fair skin, charcoal henley, animated" },
+  maya: { key: "maya", name: "Maya", model: "fish/s2.1-pro", voice: "ca3007f96ae7499ab87d27ea3599956a", persona: "sharp, witty", appearance: "Black woman early 30s, voluminous natural curls, warm brown skin, mustard turtleneck, expressive" },
+  ren: { key: "ren", name: "Ren", model: "fish/s2.1-pro", voice: "9a9cf47702da476aa4629e2506d4a857", persona: "deadpan, clever", appearance: "East Asian man early 30s, modern undercut hairstyle, light skin, black bomber jacket, cool composed" },
 };
 
 interface DemoSpec {
   slug: string;
   topic: string;
   styleNote: string;
-  pair: [string, string]; // host_a key, host_b key — always one Gemini + one ElevenLabs voice
+  pair: [string, string]; // host_a key, host_b key
   aspect: "16:9" | "9:16";
   captions: CaptionStyle;
   turns: number;
@@ -74,9 +70,8 @@ const DEMOS: DemoSpec[] = [
     topic:
       "podframes — the open-source tool that made this very video, and the two hosts slowly realizing " +
       "they ARE the demo. The accurate facts to work with: one line of input produced everything the " +
-      "viewer is watching. Gemini wrote this script. Speechbase mixed two completely different " +
-      "text-to-speech providers into one leveled conversation — Ada's voice is Google, Theo's is " +
-      "ElevenLabs — and returned word-level timestamps. Their faces are AI images lip-synced to this " +
+      "viewer is watching. Local Codex wrote this script. Fish Audio synthesized both hosts " +
+      "and transcribed their audio for measured word timestamps. Their faces are AI images lip-synced to this " +
       "real audio, one clip per spoken turn. The word-timed captions on screen come from those same " +
       "timestamps. It all runs locally on your machine with your own API keys — clone the repo, run one " +
       "command, and it makes one of these about any topic you type. Open source, Apache-2.0.",
@@ -98,8 +93,8 @@ const DEMOS: DemoSpec[] = [
     slug: "demo-what-this-cost",
     topic:
       "How much did it cost to make this exact video? The real receipt for an AI video podcast, read " +
-      "out loud: the script costs fractions of a cent, the two voices cost a few cents (text-to-speech " +
-      "is priced per character), each host portrait is about a dime, and the expensive line item is the " +
+      "out loud: scripts and portraits use ChatGPT subscription limits, voices and alignment use Fish " +
+      "Audio API credits, and the biggest usage-based line item is the " +
       "lip-synced video — roughly ten cents for every second either of them talks. So this whole clip " +
       "is a couple of dollars, and a full 90-second episode is under ten. The punchline: video was the " +
       "one media format you couldn't make for coffee money, and now it is.",

@@ -22,6 +22,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (!turnIndices.length) return new Response("turnIndices is required", { status: 400 });
 
   return withProjectLock(safe, async () => {
+    if (isRunActiveAnywhere(safe)) return new Response("A generation run is queued or active. Wait for it to finish.", { status: 409 });
     const project = await Project.load(root, safe);
     if (!project) return new Response("not found", { status: 404 });
 

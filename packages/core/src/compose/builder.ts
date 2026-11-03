@@ -1,5 +1,5 @@
 import { providerOf } from "../types";
-import { BRAND, TREATMENT_INTRO, providerColor } from "../shared";
+import { BRAND, TREATMENT_INTRO, providerColor, brollMotion } from "../shared";
 import { planBaseTrack } from "../stages/turn-timing";
 import { fontFaceCss, type EmbeddedFont } from "./fonts";
 import type { CaptionStyle, Cue, Host, TurnRegion, VisualTreatment } from "../types";
@@ -279,7 +279,7 @@ export function buildComposition(input: BuildInput): string {
         start,
         dur,
         12,
-        cueInner(cue, color, treatment, cueIndex),
+        cueInner(cue, color),
         0,
         start < introDur,
       ),
@@ -290,23 +290,24 @@ export function buildComposition(input: BuildInput): string {
         tl.push(
           `    tl.fromTo('#${cue.id} .broll-card', { opacity: 0, scale: 1.08 }, { opacity: 1, scale: 1, duration: 0.48, ease: 'power3.out' }, ${start});`,
           `    tl.to('#${cue.id} .broll-card', { opacity: 0, scale: 1.03, duration: 0.28, ease: 'power2.in' }, ${r2(end - 0.28)});`,
-          `    tl.fromTo('#${cue.id} .broll-img', { scale: 1.12 }, { scale: 1.02, duration: ${dur}, ease: 'none' }, ${start});`,
         );
       } else if (treatment === "editorial") {
-        const enterX = side === "right" ? 110 : -110;
+        const enterX = side === "right" ? 38 : -38;
         tl.push(
           `    tl.fromTo('#${cue.id} .broll-card', { opacity: 0, x: ${enterX}, scale: 0.94 }, { opacity: 1, x: 0, scale: 1, duration: 0.55, ease: 'expo.out' }, ${start});`,
           `    tl.to('#${cue.id} .broll-card', { opacity: 0, x: ${enterX / 2}, duration: 0.3, ease: 'power2.in' }, ${r2(end - 0.3)});`,
-          `    tl.fromTo('#${cue.id} .broll-img', { scale: 1.02 }, { scale: 1.12, duration: ${dur}, ease: 'none' }, ${start});`,
         );
       } else {
         tl.push(
-          `    tl.fromTo('#${cue.id} .broll-card', { opacity: 0, scale: 0.82, y: 18 }, { opacity: 1, scale: 1, y: 0, duration: 0.55, ease: 'back.out(1.6)' }, ${start});`,
+          `    tl.fromTo('#${cue.id} .broll-card', { opacity: 0, scale: 0.97, y: 12 }, { opacity: 1, scale: 1, y: 0, duration: 0.35, ease: 'power2.out' }, ${start});`,
           `    tl.to('#${cue.id} .broll-card', { opacity: 0, scale: 0.9, duration: 0.35, ease: 'power2.in' }, ${r2(end - 0.35)});`,
-          `    tl.fromTo('#${cue.id} .broll-img', { scale: 1.02 }, { scale: 1.12, duration: ${dur}, ease: 'none' }, ${start});`,
         );
       }
-      tl.push(`    tl.set('#${cue.id}', { opacity: 0 }, ${end});`);
+      const motion = brollMotion(cueIndex);
+      tl.push(
+        `    tl.fromTo('#${cue.id} .broll-img', ${JSON.stringify(motion.from)}, { ...${JSON.stringify(motion.to)}, duration: ${dur}, ease: 'none' }, ${start});`,
+        `    tl.set('#${cue.id}', { opacity: 0 }, ${end});`,
+      );
       if (cue.title) {
         tl.push(
           `    tl.fromTo('#${cue.id} .broll-label', { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.3, ease: 'power3.out' }, ${r2(start + 0.35)});`,
@@ -317,7 +318,6 @@ export function buildComposition(input: BuildInput): string {
         `    tl.set('#${cue.id}', { opacity: 1 }, ${start});`,
         `    tl.fromTo('#${cue.id} .stat-card', { opacity: 0, x: ${side === "right" ? 90 : -90} }, { opacity: 1, x: 0, duration: 0.5, ease: 'expo.out' }, ${start});`,
         `    tl.fromTo('#${cue.id} .stat-figure', { opacity: 0, scale: 0.72 }, { opacity: 1, scale: 1, duration: 0.62, ease: 'back.out(1.7)' }, ${r2(start + 0.1)});`,
-        `    tl.fromTo('#${cue.id} .stat-meter-fill', { scaleX: 0 }, { scaleX: 0.76, duration: 0.8, ease: 'power3.out' }, ${r2(start + 0.3)});`,
         `    tl.to('#${cue.id}', { opacity: 0, duration: 0.35, ease: 'power2.in' }, ${r2(end - 0.35)});`,
         `    tl.set('#${cue.id}', { opacity: 0 }, ${end});`,
       );
@@ -330,11 +330,11 @@ export function buildComposition(input: BuildInput): string {
   const activeVars = captionActiveVars(input.captionStyle, input.captionColor);
   for (const group of input.captions) {
     const start = r2(group.start);
-    const dur = r2(Math.max(0.5, group.end - group.start));
+    const dur = r2(Math.max(0.04, group.end - group.start));
     overlays.push(
       overlay(group.id, `caption style-${input.captionStyle}`, start, dur, 16, captionInner(group), 0, start < introDur),
     );
-    fade(tl, `#${group.id}`, start, dur, 0.18, 0.14);
+    fade(tl, `#${group.id}`, start, dur, Math.min(0.06, dur / 4), Math.min(0.06, dur / 4));
     group.words.forEach((w, wi) => {
       tl.push(`    tl.to('#${group.id} .w${wi}', ${activeVars}, ${r2(w.start)});`);
     });
@@ -348,35 +348,25 @@ export function buildComposition(input: BuildInput): string {
 function cueInner(
   cue: Cue & { image?: string },
   color: string,
-  treatment: VisualTreatment,
-  cueIndex: number,
 ): string {
-  const meta =
-    treatment === "minimal"
-      ? ""
-      : `<div class="cue-meta"><span>VISUAL ${String(cueIndex + 1).padStart(2, "0")}</span><span>${esc(cue.type.toUpperCase())}</span></div>`;
   if (cue.type === "broll" && cue.image) {
     // A centered card laid OVER the avatar video, which keeps playing underneath —
     // same tier as the stat/quote/lower-third cards below, not a full-screen takeover.
     return `      <div class="broll-card">
         <img class="broll-img" src="${cue.image}" crossorigin="anonymous" alt="" data-layout-allow-overflow />
         <div class="broll-scrim"></div>
-        ${meta}
         ${cue.title ? `<div class="broll-label" style="--ch:${color}"><span class="tick"></span>${esc(cue.title)}</div>` : ""}
       </div>`;
   }
   if (cue.type === "stat") {
     return `      <div class="stat-card" style="--ch:${color}">
-        ${meta}
         <div class="stat-figure">${esc(cue.figure ?? cue.title ?? "")}</div>
         ${cue.title && cue.figure ? `<div class="stat-title">${esc(cue.title)}</div>` : ""}
         ${cue.subtitle ? `<div class="stat-sub">${esc(cue.subtitle)}</div>` : ""}
-        ${treatment === "minimal" ? "" : `<div class="stat-meter"><span class="stat-meter-fill"></span></div>`}
       </div>`;
   }
   if (cue.type === "quote") {
     return `      <div class="quote-card" style="--ch:${color}">
-        ${meta}
         <div class="quote-mark">"</div>
         <div class="quote-text">${esc(cue.title ?? "")}</div>
         ${cue.subtitle ? `<div class="quote-sub">— ${esc(cue.subtitle)}</div>` : ""}
@@ -385,7 +375,6 @@ function cueInner(
   return `      <div class="l3-bar" style="--ch:${color}">
         <span class="l3-accent"></span>
         <div class="l3-text">
-          ${meta}
           <div class="l3-title">${esc(cue.title ?? "")}</div>
           ${cue.subtitle ? `<div class="l3-sub">${esc(cue.subtitle)}</div>` : ""}
         </div>
@@ -403,7 +392,7 @@ function episodeOpenInner(title: string, hook: string): string {
 }
 
 function captionInner(group: CaptionGroup): string {
-  const spans = group.words.map((w, i) => `<span class="w${i}">${esc(w.text)}</span>`).join(" ");
+  const spans = group.words.map((w, i) => `<span class="w${i}">${esc(w.text)}</span>`).join(group.verbatim ? "" : " ");
   return `      <div class="cap-inner">${spans}</div>`;
 }
 
@@ -459,7 +448,8 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
 .caption{display:flex;align-items:flex-end;justify-content:center;padding-bottom:96px;
   background:linear-gradient(180deg,rgba(16,15,14,0) 55%,rgba(16,15,14,.72) 100%)}
 .cap-inner{max-width:1500px;text-align:center;font-size:60px;font-weight:700;line-height:1.3;
-  color:var(--text-2);text-shadow:0 4px 24px rgba(0,0,0,.7);padding:0 40px}
+  color:var(--text-2);text-shadow:0 4px 24px rgba(0,0,0,.7);padding:0 40px;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;text-wrap:balance}
 .cap-inner span{display:inline-block;opacity:.65;padding:0 .04em}
 /* Caption styles differ in LAYOUT, not just color: each groups a different
    phrase length (CAPTION_STYLE_PRESETS.maxWords) and sizes to match — slam is
@@ -495,8 +485,6 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
 /* Stat cards get the same compact corner treatment as b-roll — pinned top-right
    over the video so the host's face stays visible. */
 .stat{display:flex;justify-content:flex-end;align-items:flex-start;padding:48px}
-/* position:relative so the .cue-meta badge anchors to the CARD, not the
-   full-frame overlay (and never depends on a GSAP transform side effect). */
 .stat-card{position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;padding:30px 44px;
   background:rgba(24,23,21,.92);border:1px solid var(--hairline);border-right:4px solid var(--ch);
   box-shadow:0 24px 70px rgba(0,0,0,.5)}
@@ -512,7 +500,6 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
 .quote-sub{margin-top:28px;font-size:32px;color:var(--text-2)}
 
 .lower-third{display:flex;align-items:flex-end;padding:0 0 200px 64px}
-/* position:relative anchors .cue-meta inside the bar (see .stat-card). */
 .l3-bar{position:relative;display:flex;align-items:stretch;gap:20px;background:rgba(16,15,14,.84);border:1px solid var(--hairline);
   padding:22px 30px;max-width:1200px}
 .l3-accent{width:6px;background:var(--ch);box-shadow:0 0 18px var(--ch)}
@@ -521,14 +508,12 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
 
 /* Editorial treatment: alternate the supporting visual zone so the frame has
    rhythm without replacing the host. */
-.cue-meta{position:absolute;top:18px;left:18px;right:18px;display:flex;justify-content:space-between;
-  font-family:'Geist Mono',monospace;font-size:17px;letter-spacing:.1em;color:var(--text);z-index:3}
 .treatment-editorial.broll{padding:58px}.treatment-editorial.broll .broll-card{width:min(570px,46%)}
 .treatment-editorial.cue-side-left{justify-content:flex-start}.treatment-editorial.cue-side-left .broll-card{transform-origin:20% 20%}
 .treatment-editorial.stat{padding:58px}.treatment-editorial.stat.cue-side-left{justify-content:flex-start}
-.treatment-editorial .stat-card{min-width:430px;align-items:flex-start;padding-top:64px}
+.treatment-editorial .stat-card{min-width:430px;align-items:flex-start}
 .treatment-editorial .quote-card{padding:76px 88px;background:rgba(16,15,14,.88);border:2px solid var(--hairline)}
-.treatment-editorial.lower-third{padding-left:88px}.treatment-editorial .l3-bar{min-width:58%;padding-top:58px}
+.treatment-editorial.lower-third{padding-left:88px}.treatment-editorial .l3-bar{min-width:58%}
 
 /* Cinematic treatment: image/stat/quote beats become their own full-frame
    worlds. Captions stay above them on z-index 50. */
@@ -537,20 +522,14 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
 .treatment-cinematic.broll .broll-label{left:76px;right:76px;bottom:188px;padding-left:22px;border-left:8px solid var(--ch);
   font-size:48px;line-height:1.05;white-space:normal;text-shadow:0 4px 28px rgba(0,0,0,.8)}
 .treatment-cinematic.broll .broll-label .tick{display:none}
-.treatment-cinematic.broll .cue-meta{top:54px;left:76px;right:76px}
 .treatment-cinematic.stat{justify-content:flex-start;align-items:center;padding:100px;background:
   radial-gradient(circle at 78% 20%,color-mix(in srgb,var(--ch) 22%,transparent),transparent 36%),var(--bg)}
 .treatment-cinematic .stat-card{width:78%;align-items:flex-start;padding:78px 0;background:transparent;border:0;border-top:3px solid var(--hairline);box-shadow:none}
 .treatment-cinematic .stat-figure{font-size:190px}.treatment-cinematic .stat-title{font-size:48px}.treatment-cinematic .stat-sub{font-size:30px}
-.stat-meter{width:100%;height:12px;margin-top:28px;background:var(--hairline);overflow:hidden}
-/* Starts collapsed — the GSAP fromTo only takes over at start+0.3s, and a
-   full-width bar during the card's fade-in would visibly snap to zero. */
-.stat-meter-fill{display:block;width:100%;height:100%;background:var(--ch);transform-origin:left center;transform:scaleX(0)}
 .treatment-cinematic.quote{padding:0 10%;background:radial-gradient(circle at 50% 40%,color-mix(in srgb,var(--ch) 16%,transparent),transparent 48%),rgba(16,15,14,.96)}
-.treatment-cinematic .quote-text{font-size:92px}.treatment-cinematic .quote-card .cue-meta{top:-84px}
-.treatment-cinematic.lower-third{padding:0 84px 210px}.treatment-cinematic .l3-bar{width:100%;max-width:none;padding:58px 48px 28px}
+.treatment-cinematic .quote-text{font-size:92px}
+.treatment-cinematic.lower-third{padding:0 84px 210px}.treatment-cinematic .l3-bar{width:100%;max-width:none;padding:28px 48px}
 .portrait .treatment-cinematic.broll .broll-label{left:62px;right:62px;bottom:270px;font-size:58px}
-.portrait .treatment-cinematic.broll .cue-meta{left:62px;right:62px}
 .portrait .treatment-cinematic.stat{padding:82px}.portrait .treatment-cinematic .stat-card{width:100%}.portrait .treatment-cinematic .stat-figure{font-size:160px}
 .portrait .treatment-cinematic .quote-text{font-size:76px}
 </style>
